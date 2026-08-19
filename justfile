@@ -50,23 +50,6 @@ build-agent:
 build-sdk:
     cargo build -p clwd-sdk --target wasm32-wasip2
 
-# ==========================================
-# 3. GUEST BINDINGS
-# ==========================================
-# wit/ is the single source of truth. Bindings are generated build output —
-# they land in target/ and are never committed. Both recipes need external
-# toolchains, so neither is wired into `check`.
-
-bindings: bindings-py bindings-ts
-
-# Requires: pip install componentize-py
-bindings-py:
-    componentize-py --wit-path wit --world app bindings target/bindings/py
-
-# Requires: npx @bytecodealliance/jco
-bindings-ts:
-    npx --yes @bytecodealliance/jco guest-types wit --world-name app -o target/bindings/ts
-
 # Parse-check the WIT package without generating anything.
 # Requires: cargo install wasm-tools
 wit-check:

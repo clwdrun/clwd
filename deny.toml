@@ -8,6 +8,10 @@ all-features = true
 
 [advisories]
 ignore = []
+# Explicit, not defaulted: the meaning of this key changed across cargo-deny
+# releases, and a sandbox runtime should not have its advisory scope quietly
+# widen or narrow on a tool upgrade.
+unmaintained = "all"
 
 [licenses]
 allow = [
@@ -20,6 +24,10 @@ allow = [
     "Zlib",
     "Unicode-3.0",
     "CC0-1.0",
+    # webpki-roots / webpki-root-certs: the Mozilla CA store, shipped as data
+    # rather than code. CDLA-Permissive-2.0 governs the certificate set and
+    # imposes no obligation on what we redistribute around it.
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.93
 
@@ -45,13 +53,6 @@ deny = [
     { name = "native-tls" },
 ]
 
-skip-tree = [
-    { name = "windows-sys" },
-]
-
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-
-[sources.allow-org]
-github = ["clwdrun", "bytecodealliance"]
