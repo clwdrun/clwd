@@ -1,0 +1,180 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege by default. No job here needs to write to the repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # Mirrors `just check`. If these two drift, the gate is a lie.
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # rustup honours rust-toolchain.toml on first invocation, installing the
+      # pinned version with its profile, components and targets. No third-party
+      # toolchain action needed — fewer actions is less supply chain in a repo
+      # whose selling point is auditability.
+      - run: rustup show active-toolchain
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin
+            target
+          # Toolchain file in the key: a pin bump must invalidate rather than
+          # resurrect artifacts built by the old compiler.
+          key: ${{ runner.os }}-gate-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+
+      - name: fmt
+        run: cargo fmt --all --check
+
+      - name: clippy
+        run: cargo clippy --workspace --all-features -- -D warnings
+
+      - name: test
+        run: cargo test --workspace
+
+      - name: install cargo-deny
+        run: cargo install cargo-deny --locked --version ^0.20
+
+      - name: deny
+        run: cargo deny check --hide-inclusion-graph
+
+  # Neither backend is in `default`, so an ordinary workspace build never
+  # compiles them. Without this job they rot silently.
+  backends:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        feature: [wasm, microvm]
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-backend-${{ matrix.feature }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+      # microvm needs Linux with KVM at runtime; compiling it does not.
+      - run: cargo build -p clwd-runtime --features ${{ matrix.feature }}
+
+  guest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-guest-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+      - name: build sdk as a component
+        run: cargo build -p clwd-sdk --target wasm32-wasip2
+
+      - name: wit parses standalone
+        run: |
+          WT=1.257.1
+          curl -sSL -o /tmp/wt.tar.gz \
+            "https://github.com/bytecodealliance/wasm-tools/releases/download/v${WT}/wasm-tools-${WT}-x86_64-linux.tar.gz"
+          tar xzf /tmp/wt.tar.gz -C /tmp
+          "/tmp/wasm-tools-${WT}-x86_64-linux/wasm-tools" component wit wit/
+
+  # `clwd logs` must not carry a runtime backend. Asserted, not trusted.
+  cli-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain
+      - name: clwd-cli must not depend on wasmtime
+        run: |
+          if cargo tree -p clwd-cli -e normal | grep -q wasmtime; then
+            echo "::error::clwd-cli pulled in wasmtime — a runtime backend must not reach the CLI"
+            cargo tree -p clwd-cli -e normal | grep -B5 wasmtime
+            exit 1
+          fi
+          echo "ok: no wasmtime in clwd-cli"
+
+  # The guardrail. The control plane lives in a separate private repo; a path
+  # or git dependency on it builds fine for whoever added it and breaks for
+  # everyone else, while leaking private types into public crates. It fails
+  # silently precisely because the author cannot reproduce the failure.
+  standalone:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: fresh
+
+      - run: rustup show active-toolchain
+        working-directory: fresh
+
+      - name: no dependency may reference the private platform repo
+        working-directory: fresh
+        run: |
+          if grep -rnE 'clwdrun/platform|path\s*=\s*"[^"]*\.\./\.\./' --include=Cargo.toml .; then
+            echo "::error::a manifest references the private platform repo or escapes the workspace"
+            exit 1
+          fi
+          echo "ok: no private-repo or workspace-escaping path dependency"
+
+      # Isolated CARGO_HOME and no sibling checkouts: nothing on this runner can
+      # satisfy a path dep that a developer machine would resolve locally.
+      - name: build from a clean clone with isolated registry state
+        working-directory: fresh
+        env:
+          CARGO_HOME: ${{ runner.temp }}/isolated-cargo
+        run: cargo build --workspace --locked
+
+  # clwd-agent is musl-only and deliberately outside default-members, so
+  # `cargo build --workspace` never touches it. Its own job, so a failure here
+  # is attributable at a glance and does not mask a gate failure.
+  musl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain
+      - name: musl linker
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-musl-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+      - run: cargo build -p clwd-agent --target x86_64-unknown-linux-musl
+
+      - name: clwd-agent must stay out of default-members
+        run: |
+          if cargo metadata --no-deps --format-version 1 \
+             | grep -q '"default_members".*clwd-agent'; then
+            echo "::error::clwd-agent is back in default-members; it forces a musl toolchain on every contributor"
+            exit 1
+          fi
+          echo "ok: clwd-agent excluded from default-members"

@@ -1,0 +1,157 @@
+name: cd
+
+# Two independent release trains, because they have different cadences.
+#   v*            -> the clwd CLI: build binaries, cut a GitHub release
+#   clwd-sdk-v*   -> publish clwd-sdk to crates.io
+#
+# The SDK ships on its own cadence and is consumed by the private platform
+# repo via a tag-pinned git dependency, so a breaking SDK change needs a
+# version bump and a tag — not just a merge to main.
+on:
+  push:
+    tags:
+      - "v*"
+      - "clwd-sdk-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  # A tag is a promise about what the code says. Check it before shipping —
+  # a mismatch here is cheap, and expensive once it is on crates.io forever.
+  verify-tag:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      train: ${{ steps.v.outputs.train }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: v
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$TAG" == clwd-sdk-v* ]]; then
+            TRAIN=sdk
+            VERSION="${TAG#clwd-sdk-v}"
+            MANIFEST=$(cargo metadata --no-deps --format-version 1 \
+              | python3 -c 'import json,sys;print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="clwd-sdk"))')
+          else
+            TRAIN=cli
+            VERSION="${TAG#v}"
+            MANIFEST=$(cargo metadata --no-deps --format-version 1 \
+              | python3 -c 'import json,sys;print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="clwd-cli"))')
+          fi
+          if [[ "$VERSION" != "$MANIFEST" ]]; then
+            echo "::error::tag $TAG claims $VERSION but the manifest says $MANIFEST"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "train=$TRAIN" >> "$GITHUB_OUTPUT"
+          echo "ok: $TAG matches manifest ($TRAIN train)"
+
+  # Never ship something that would not have passed CI.
+  gate:
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-features -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo install cargo-deny --locked --version ^0.20
+      - run: cargo deny check --hide-inclusion-graph
+
+  build-cli:
+    if: needs.verify-tag.outputs.train == 'cli'
+    needs: [verify-tag, gate]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          # Static build: runs on any distro without a glibc version dance.
+          - x86_64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain
+      - name: musl linker
+        if: endsWith(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: rustup target add ${{ matrix.target }}
+      - run: cargo build -p clwd-cli --release --locked --target ${{ matrix.target }}
+      - name: package
+        run: |
+          V="${{ needs.verify-tag.outputs.version }}"
+          NAME="clwd-${V}-${{ matrix.target }}"
+          install -Dm755 "target/${{ matrix.target }}/release/clwd" "dist/${NAME}/clwd"
+          cp LICENSE README.md "dist/${NAME}/"
+          tar -C dist -czf "${NAME}.tar.gz" "${NAME}"
+          sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clwd-${{ matrix.target }}
+          path: |
+            *.tar.gz
+            *.tar.gz.sha256
+
+  release:
+    if: needs.verify-tag.outputs.train == 'cli'
+    needs: [verify-tag, build-cli]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: cut release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF#refs/tags/}" \
+            --title "clwd ${{ needs.verify-tag.outputs.version }}" \
+            --generate-notes \
+            artifacts/*.tar.gz artifacts/*.sha256
+
+  publish-sdk:
+    if: needs.verify-tag.outputs.train == 'sdk'
+    needs: [verify-tag, gate]
+    runs-on: ubuntu-latest
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain
+
+      # Fail loudly rather than skipping. A release that silently publishes
+      # nothing is worse than one that stops and says why.
+      - name: require token
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [[ -z "$CARGO_REGISTRY_TOKEN" ]]; then
+            echo "::error::CARGO_REGISTRY_TOKEN is not set on the crates-io environment"
+            exit 1
+          fi
+
+      - name: dry run
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p clwd-sdk --locked --dry-run
+
+      - name: publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p clwd-sdk --locked
