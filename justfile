@@ -1,67 +1,80 @@
-# clwd master build orchestrator
+# clwd workspace tasks
 
-set shell := ["bash", "-c"]
+set shell := ["bash", "-uc"]
 
-# Default command when running `just`
 default:
     @just --list
 
 # ==========================================
-# 1. DEVELOPMENT & CHECKING
+# 1. GATE
 # ==========================================
 
-# Run fast type and compiler checks across all Rust crates
-check:
-    cargo check --workspace
+# The gate. Everything CI enforces, in the order that fails cheapest first.
+check: fmt-check clippy test deny
 
-# Run tests across all workspace crates
+fmt:
+    cargo fmt --all
+
+fmt-check:
+    cargo fmt --all --check
+
+clippy:
+    cargo clippy --workspace --all-features -- -D warnings
+
 test:
     cargo test --workspace
 
-# Format all Rust code
-fmt:
-    cargo +nightly fmt --all
+deny:
+    cargo deny check --hide-inclusion-graph
 
 # ==========================================
-# 2. BINDINGS & SDK GENERATION
+# 2. BUILDS
 # ==========================================
 
-# Build all language bindings (Python + TypeScript)
-build-bindings: build-py build-ts
+# Default set: cli, sdk, runtime with no backend enabled.
+build:
+    cargo build --workspace
 
-# Build Python SDK wheel locally via Maturin
-build-py:
-    @echo "🐍 Building Python SDK..."
-    cd bindings/py && maturin develop
+# Backends are features, never default. Build each explicitly.
+build-wasm:
+    cargo build -p clwd-runtime --features wasm
 
-# Build TypeScript / Node.js native addon and .d.ts files via NAPI-RS
-build-ts:
-    @echo "🟦 Building TypeScript SDK..."
-    cd bindings/ts && npm run build
+build-microvm:
+    cargo build -p clwd-runtime --features microvm
 
-# Generate language types directly from WIT files
-generate-wit:
-    @echo "⚙️ Generating types from wit/..."
-    # Generate TypeScript definitions from WIT using jco
-    npx @bytecodealliance/jco types wit/ -o bindings/ts/wit-types
+# musl-only, deliberately outside default-members.
+build-agent:
+    cargo build -p clwd-agent --target x86_64-unknown-linux-musl
+
+# Guest components target the component model, not core wasm.
+build-sdk:
+    cargo build -p clwd-sdk --target wasm32-wasip2
 
 # ==========================================
-# 3. RELEASE PACKAGING
+# 3. GUEST BINDINGS
 # ==========================================
+# wit/ is the single source of truth. Bindings are generated build output —
+# they land in target/ and are never committed. Both recipes need external
+# toolchains, so neither is wired into `check`.
 
-# Package production artifacts for distribution (PyPI wheels & NPM packages)
-release-all:
-    @echo "📦 Packaging for production..."
-    mkdir -p dist
-    cd bindings/py && maturin build --release --out ../../dist/wheels
-    cd bindings/ts && napi build --platform --release --output-dir ../../dist/npm
+bindings: bindings-py bindings-ts
+
+# Requires: pip install componentize-py
+bindings-py:
+    componentize-py --wit-path wit --world app bindings target/bindings/py
+
+# Requires: npx @bytecodealliance/jco
+bindings-ts:
+    npx --yes @bytecodealliance/jco guest-types wit --world-name app -o target/bindings/ts
+
+# Parse-check the WIT package without generating anything.
+# Requires: cargo install wasm-tools
+wit-check:
+    wasm-tools component wit wit/
 
 # ==========================================
 # 4. CLEANUP
 # ==========================================
 
-# Clean all target directories, wheels, and node artifacts
 clean:
     cargo clean
-    rm -rf dist/
-    rm -rf bindings/ts/*.node bindings/ts/*.d.ts

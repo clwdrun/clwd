@@ -1,8 +1,7 @@
 # CLAUDE.md — clwd (public)
 
 Public workspace for clwd, a cloud for small software. Apache-2.0. Contains the
-sandbox runtime, CLI, SDK, and templates. The control plane lives in a separate
-private repo (`github.com/clwdrun/platform`) and is not visible from here.
+sandbox runtime, CLI, SDK, and templates.
 
 ## Commands
 
