@@ -20,3 +20,9 @@ cargo build --workspace          # cli, sdk, runtime (no feature flags)
 cargo build -p clwd-runtime --features wasm
 cargo build -p clwd-runtime --features microvm
 ```
+
+## Security
+
+The isolation boundary is the product, and this repo is public so it can be
+audited. Report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
+Do not open a public issue for a suspected sandbox escape.
