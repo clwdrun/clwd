@@ -1,0 +1,38 @@
+[package]
+name = "clwd-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Sandbox trait plus wasmtime and Firecracker backends"
+
+[features]
+default = []
+wasm = ["dep:wasmtime", "dep:wasmtime-wasi-http"]
+microvm = [
+    "dep:hyper",
+    "dep:hyperlocal",
+    "dep:tokio-vsock",
+    "dep:rtnetlink",
+    "dep:seccompiler",
+    "dep:landlock",
+    "dep:nix",
+]
+
+[dependencies]
+tokio = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+
+wasmtime = { workspace = true, optional = true }
+wasmtime-wasi-http = { workspace = true, optional = true }
+
+hyper = { workspace = true, optional = true }
+hyperlocal = { workspace = true, optional = true }
+tokio-vsock = { workspace = true, optional = true }
+rtnetlink = { workspace = true, optional = true }
+seccompiler = { workspace = true, optional = true }
+landlock = { workspace = true, optional = true }
+nix = { workspace = true, optional = true }

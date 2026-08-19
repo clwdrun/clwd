@@ -1,0 +1,21 @@
+[package]
+name = "clwd-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI for deploying and sharing apps on clwd"
+
+[[bin]]
+name = "clwd"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+reqwest = { workspace = true }
+keyring = { workspace = true }
+indicatif = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,84 @@
+# CLAUDE.md — clwd (public)
+
+Public workspace for clwd, a cloud for small software. Apache-2.0. Contains the
+sandbox runtime, CLI, SDK, and templates. The control plane lives in a separate
+private repo (`github.com/clwdrun/platform`) and is not visible from here.
+
+## Commands
+
+```bash
+cargo build --workspace              # cli, sdk, runtime — no backends enabled
+cargo build -p clwd-runtime --features wasm
+cargo build -p clwd-runtime --features microvm
+cargo build -p clwd-agent --target x86_64-unknown-linux-musl
+cargo test --workspace
+cargo clippy --workspace --all-features -- -D warnings
+cargo fmt --all
+```
+
+`clwd-agent` is excluded from `default-members` — it is musl-only and must
+be built with `-p` and an explicit target. Do not add it back to the default set.
+
+The microvm backend requires Linux with KVM. On macOS it will not build or run;
+use a Linux VM.
+
+## Crates
+
+| Crate | Role |
+|---|---|
+| `clwd-cli` | binary `clwd`: deploy, logs, share, secrets |
+| `clwd-sdk` | what app code links against; WIT bindings |
+| `clwd-runtime` | the `Sandbox` trait + `wasm` and `microvm` backends |
+| `clwd-agent` | musl init that runs inside the microVM |
+
+## Architectural rules
+
+**The `Sandbox` trait is the only abstraction callers see.** Both backends
+implement it. Do not add methods that only make sense for one backend, and do not
+expose backend-specific types (`wasmtime::Store`, Firecracker socket handles) in
+the public API. If a feature genuinely cannot be expressed through `Sandbox`,
+raise it rather than widening the trait with a backend-shaped method.
+
+**Backends are Cargo features, and the gating must stay strict.** `wasm` pulls in
+`wasmtime`; `microvm` pulls in `hyper`/`hyperlocal`/`tokio-vsock`/etc. All are
+`optional = true`. `clwd-cli` must never pull in `wasmtime` just to print logs —
+if a change makes the CLI's dependency tree grow a runtime backend, that change is
+wrong.
+
+**Add shared dependencies to `[workspace.dependencies]` in the root manifest,**
+then reference them as `foo = { workspace = true }` in crate manifests. Do not
+pin versions per-crate.
+
+**This workspace must build standalone from a clean clone.** Never add a path or
+git dependency on anything in the `platform` repo. The public/private split exists
+to keep private types from leaking into public crates, and a stray path dependency
+defeats it silently — it works locally and breaks CI. CI enforces this with
+`cargo-deny` plus a clean-clone build job.
+
+## Backend notes
+
+**wasm** — component model, not core modules. `wasmtime-wasi-http` for the HTTP
+surface. Use epoch interruption for CPU limits, not fuel.
+
+**microvm** — there is no well-maintained `firecracker-rs` wrapper; drive the
+Firecracker API socket directly with `hyper` + `hyperlocal`. `jailer` provides the
+outer sandbox. `tokio-vsock` for host↔guest control. Snapshot-restore is a day-one
+design constraint, not a later optimization — it is what gets cold start under
+~150ms, and retrofitting it means reworking how VM state is created. Write new
+microvm code as if snapshots already exist.
+
+## Product surface
+
+`templates/` and `wit/` are read by agents generating apps, not just by humans.
+Treat changes there as product changes: breaking a template breaks generated code
+in the field. `clwd-sdk` publishes to crates.io on its own version cadence and is
+consumed by `platform` via a tag-pinned git dependency, so a breaking SDK change
+needs a version bump and a tag, not just a merge.
+
+## Untrusted code assumption
+
+Everything running in a sandbox was probably written by an agent and is being run
+by a non-engineer against real company data. When in doubt about a
+capability — filesystem access, network egress, host resource limits — default to
+denying it and make it explicit rather than inheriting whatever the runtime allows
+by default.

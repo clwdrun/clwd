@@ -1,0 +1,15 @@
+[package]
+name = "clwd-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "SDK that clwd app code links against"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Base SDK dependencies
+wit-bindgen = { workspace = true }
+serde = { workspace = true }

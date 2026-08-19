@@ -1,0 +1,8 @@
+package clwd:app@0.1.0;
+
+world app {
+    import clwd:identity/context@0.1.0;
+    // import clwd:secrets/broker@0.1.0;
+    // import clwd:app-data/store@0.1.0;
+    include wasi:http/proxy@0.2.0;
+}

@@ -1,0 +1,50 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+# clwd-agent is musl-only and built via its own CI job / `-p` flag,
+# not as part of a plain `cargo build --workspace`.
+default-members = [
+    "crates/cli",
+    "crates/sdk",
+    "crates/runtime",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/clwdrun/clwd"
+
+[workspace.dependencies]
+# shared
+tokio = { version = "1.50.0", features = ["full"] }
+serde = { version = "1.0.0", features = ["derive"] }
+serde_json = "1"
+thiserror = "2.0.20"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+async-trait = "0.1"
+
+# clwd-cli
+clap = { version = "4.6.6", features = ["derive"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "json"] }
+keyring = "4.1.6"
+indicatif = "0.18.6"
+
+# clwd-sdk
+wit-bindgen = "0.60.0"
+
+# clwd-runtime (wasm backend)
+wasmtime = "47.0.3"
+wasmtime-wasi-http = "47.0.3"
+
+# clwd-runtime (microvm backend) — no maintained firecracker-rs wrapper,
+# so we drive the Firecracker API socket directly.
+hyper = { version = "1", features = ["full"] }
+hyperlocal = "0.9"
+tokio-vsock = "0.7.2"
+rtnetlink = "0.23.0"
+seccompiler = "0.5.0"
+landlock = "0.4"
+nix = { version = "0.31.3", features = ["process", "signal", "mount"] }

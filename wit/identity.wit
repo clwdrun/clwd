@@ -1,0 +1,89 @@
+package clwd:identity@0.1.0;
+
+/// Identity of the caller for the current request.
+///
+/// Every value here is populated by the gateway before app code runs.
+/// There is deliberately no way for a component to construct, mutate, or
+/// re-authenticate a principal — if an app could, an authoring agent would
+/// eventually wire up its own login flow and defeat the platform.
+interface types {
+    /// Opaque, stable, org-unique. Not an email: emails get renamed and reused.
+    type subject-id = string;
+    type org-id = string;
+    type group-id = string;
+
+    record group {
+        id: group-id,
+        name: option<string>,
+    }
+
+    record principal {
+        subject: subject-id,
+        org: org-id,
+        display-name: option<string>,
+        email: option<string>,
+    }
+
+    /// A non-human caller: another app, or an agent holding a delegated grant.
+    record service-principal {
+        subject: subject-id,
+        org: org-id,
+        on-behalf-of: option<subject-id>,
+    }
+
+    /// Anonymous is reachable — a public share link has no session.
+    /// Apps must handle it rather than assuming a user is present.
+    variant caller {
+        anonymous,
+        user(principal),
+        service(service-principal),
+    }
+
+    /// Resolved from share grants on this app.
+    enum role {
+        viewer,
+        editor,
+        owner,
+    }
+
+    /// Maps 1:1 onto a Cedar entity UID (`Type::"id"`).
+    record entity-ref {
+        kind: string,
+        id: string,
+    }
+
+    record decision {
+        allowed: bool,
+        /// Diagnostic only. Never branch on this string.
+        reason: option<string>,
+    }
+
+    variant authz-error {
+        /// Control plane unreachable. Callers must fail closed.
+        unavailable,
+        malformed(string),
+    }
+}
+
+interface context {
+    use types.{caller, role, group-id, entity-ref, decision, authz-error};
+
+    /// Who is calling, for the request currently being handled.
+    get-caller: func() -> caller;
+
+    /// The caller's role on this app. None for anonymous.
+    get-role: func() -> option<role>;
+
+    /// Membership test without materializing every group. Prefer this.
+    in-group: func(group: group-id) -> bool;
+
+    /// Full group list. Can be large in big orgs — use `in-group` where you can.
+    list-groups: func() -> list<group-id>;
+
+    /// Delegate an authorization question to Cedar in the control plane,
+    /// for resources the app owns and the platform can't see.
+    authorize: func(
+        action: string,
+        target: entity-ref,
+    ) -> result<decision, authz-error>;
+}

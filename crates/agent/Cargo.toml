@@ -1,0 +1,17 @@
+[package]
+name = "clwd-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "musl binary that runs inside the microVM"
+
+[[bin]]
+name = "clwd-agent"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+tokio-vsock = { workspace = true }
+nix = { workspace = true }
+serde = { workspace = true }

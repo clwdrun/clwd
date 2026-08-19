@@ -1,0 +1,2 @@
+Excluded from workspace default-members. Build explicitly:
+cargo build -p clwd-agent --target x86_64-unknown-linux-musl
