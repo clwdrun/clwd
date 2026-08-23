@@ -1,8 +1,7 @@
 # clwd
 
 A cloud for small software. Public workspace (Apache-2.0): sandbox runtime,
-CLI, SDK, and templates. The control plane lives in the private `platform`
-repo.
+CLI, SDK, and templates.
 
 ## Crates
 

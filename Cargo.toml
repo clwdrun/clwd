@@ -3,11 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 # clwd-agent is musl-only and built via its own CI job / `-p` flag,
 # not as part of a plain `cargo build --workspace`.
-default-members = [
-    "crates/cli",
-    "crates/sdk",
-    "crates/runtime",
-]
+default-members = ["crates/cli", "crates/sdk", "crates/runtime"]
 
 [workspace.package]
 version = "0.1.0"
@@ -28,7 +24,10 @@ async-trait = "0.1"
 
 # clwd-cli
 clap = { version = "4.6.6", features = ["derive"] }
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "json"] }
+reqwest = { version = "0.13.4", default-features = false, features = [
+  "rustls",
+  "json",
+] }
 keyring = "4.1.6"
 indicatif = "0.18.6"
 

@@ -10,13 +10,13 @@ description = "Sandbox trait plus wasmtime and Firecracker backends"
 default = []
 wasm = ["dep:wasmtime", "dep:wasmtime-wasi-http"]
 microvm = [
-    "dep:hyper",
-    "dep:hyperlocal",
-    "dep:tokio-vsock",
-    "dep:rtnetlink",
-    "dep:seccompiler",
-    "dep:landlock",
-    "dep:nix",
+  "dep:hyper",
+  "dep:hyperlocal",
+  "dep:tokio-vsock",
+  "dep:rtnetlink",
+  "dep:seccompiler",
+  "dep:landlock",
+  "dep:nix",
 ]
 
 [dependencies]

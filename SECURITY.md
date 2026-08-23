@@ -25,7 +25,7 @@ Please include:
 What to expect:
 
 | Stage | Target |
-|---|---|
+| --- | --- |
 | Acknowledgement | 3 business days |
 | Initial assessment | 10 business days |
 | Fix or mitigation plan communicated | 30 days |
