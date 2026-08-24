@@ -52,6 +52,25 @@ jobs:
       - name: test
         run: cargo test --workspace
 
+      # The library half of clwd-cli must stay silent. `clwd mcp serve` (#32)
+      # calls these functions in-process and emits nothing on stdout but
+      # JSON-RPC; a stray print corrupts that stream intermittently, under load
+      # only. main.rs is excluded because printing is precisely its job.
+      - name: no print macro in the clwd-cli library surface
+        run: |
+          if grep -rn --include='*.rs' -E '\b(print!|println!|eprint!|eprintln!)' \
+               crates/cli/src/lib.rs crates/cli/src/cli.rs \
+               crates/cli/src/commands/ crates/cli/src/error.rs; then
+            echo "::error::print macro in the clwd-cli library surface — see issue #14"
+            exit 1
+          fi
+          echo "ok: no print macro in the clwd-cli library surface"
+
+      # The terminal-drawing dependencies are a feature, so this is the
+      # assertion that the library half compiles without them.
+      - name: library builds without terminal dependencies
+        run: cargo build -p clwd-cli --lib --no-default-features
+
       - name: install cargo-deny
         run: cargo install cargo-deny --locked --version ^0.20
 

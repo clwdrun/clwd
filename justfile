@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: fmt-check clippy test deny
+check: fmt-check clippy test lib-silent lib-bare deny
 
 fmt:
     cargo fmt --all
@@ -26,6 +26,24 @@ test:
 
 deny:
     cargo deny check --hide-inclusion-graph
+
+# The library half of clwd-cli must stay silent — `clwd mcp serve` calls it
+# in-process and emits nothing on stdout but JSON-RPC. main.rs is exempt:
+# printing is its job.
+lib-silent:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    if grep -rn --include='*.rs' -E '\b(print!|println!|eprint!|eprintln!)' \
+         crates/cli/src/lib.rs crates/cli/src/cli.rs \
+         crates/cli/src/commands/ crates/cli/src/error.rs; then
+      echo "error: print macro in the clwd-cli library surface — see issue #14"
+      exit 1
+    fi
+    echo "ok: no print macro in the clwd-cli library surface"
+
+# Terminal-drawing deps are a feature. This asserts the library does not need them.
+lib-bare:
+    cargo build -p clwd-cli --lib --no-default-features
 
 # ==========================================
 # 2. BUILDS
