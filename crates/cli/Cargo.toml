@@ -6,16 +6,31 @@ license.workspace = true
 repository.workspace = true
 description = "CLI for deploying and sharing apps on clwd"
 
+# The library is the API `clwd mcp serve` (#32) and the integration tests call.
+# It must stay silent: command functions return typed values, and every byte
+# that reaches a terminal is written by the binary.
+[lib]
+name = "clwd_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "clwd"
 path = "src/main.rs"
 
+[features]
+default = ["terminal"]
+# Everything that draws to a TTY. `cargo build -p clwd-cli --lib
+# --no-default-features` is the assertion that the library half does not.
+terminal = ["dep:indicatif", "clap/color", "clap/suggestions"]
+
 [dependencies]
 clap = { workspace = true }
+futures-core = { workspace = true }
+indicatif = { workspace = true, optional = true }
 reqwest = { workspace = true }
 keyring = { workspace = true }
-indicatif = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
+thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

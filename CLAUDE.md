@@ -1,6 +1,6 @@
-# CLAUDE.md — clwd (public)
+# CLAUDE.md — clwd
 
-Public workspace for clwd, a cloud for small software. Apache-2.0. Contains the
+clwd, a cloud for small software. Apache-2.0. Contains the
 sandbox runtime, CLI, SDK, and templates.
 
 ## Commands
@@ -24,7 +24,7 @@ use a Linux VM.
 ## Crates
 
 | Crate | Role |
-|---|---|
+| --- | --- |
 | `clwd-cli` | binary `clwd`: deploy, logs, share, secrets |
 | `clwd-sdk` | what app code links against; WIT bindings |
 | `clwd-runtime` | the `Sandbox` trait + `wasm` and `microvm` backends |

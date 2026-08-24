@@ -13,7 +13,7 @@ Future capability packages (`clwd:secrets`, `clwd:app-data`) land here too.
 ## Vendored
 
 | Package | Version | Source |
-|---|---|---|
+| --- | --- | --- |
 | `wasi:http` | 0.2.0 | WebAssembly/wasi-http @ `v0.2.0` |
 | `wasi:io` `wasi:clocks` `wasi:random` `wasi:cli` `wasi:filesystem` `wasi:sockets` | 0.2.0 | same tree, `wit/deps/` |
 
@@ -22,7 +22,7 @@ repos, so the set is guaranteed self-consistent.
 
 To refresh the vendored set, bump the tag and re-vendor wholesale — do not hand-edit these files:
 
-```
+```bash
 curl -sSL -o /tmp/wasi-http.tar.gz \
   https://github.com/WebAssembly/wasi-http/archive/refs/tags/vX.Y.Z.tar.gz
 tar xzf /tmp/wasi-http.tar.gz -C /tmp
