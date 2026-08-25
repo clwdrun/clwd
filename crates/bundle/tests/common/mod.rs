@@ -109,3 +109,59 @@ pub fn reseal(bytes: &mut [u8], header: usize) {
     let sum: u32 = block.iter().map(|b| u32::from(*b)).sum();
     block[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
 }
+
+/// Pack entries in the order given, without sorting, so a test can produce the
+/// out-of-order archive the encoder would never emit.
+pub fn pack_in_order(entries: &[(String, Vec<u8>, bool)]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for (path, data, executable) in entries {
+        bytes.extend_from_slice(&clwd_bundle::tar::write_header(
+            path,
+            data.len() as u64,
+            *executable,
+        ));
+        bytes.extend_from_slice(data);
+        bytes.resize(bytes.len() + (512 - data.len() % 512) % 512, 0);
+    }
+    bytes.resize(bytes.len() + 1024, 0);
+    bytes
+}
+
+pub fn pack(entries: &[(String, Vec<u8>, bool)]) -> Vec<u8> {
+    let mut sorted = entries.to_vec();
+    sorted.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    pack_in_order(&sorted)
+}
+
+/// The canonical manifest of a known-good single-member bundle, as text, ready
+/// to be mutated by a test that wants one field wrong.
+pub fn valid_manifest_text() -> String {
+    let packed = bundle(one_member("app.wasm", COMPONENT));
+    let decoded = clwd_bundle::decode(&packed.bytes, None).expect("valid");
+    decoded.manifest.to_canonical_string()
+}
+
+/// An archive holding `app.wasm` and whatever manifest text a test supplies.
+pub fn with_manifest(text: &str) -> Vec<u8> {
+    pack(&[
+        ("app.wasm".to_owned(), COMPONENT.to_vec(), false),
+        ("clwd.toml".to_owned(), text.as_bytes().to_vec(), false),
+    ])
+}
+
+/// Byte offset of a named entry's header block.
+pub fn header_of(bytes: &[u8], name: &str) -> usize {
+    entry_offsets(bytes)
+        .into_iter()
+        .find(|(n, _)| n == name)
+        .unwrap_or_else(|| panic!("no entry named {name}"))
+        .1
+}
+
+/// Overwrite a header field and repair the checksum, so the test trips the rule
+/// it is aiming at rather than the checksum rule.
+pub fn patch_field(bytes: &mut [u8], name: &str, at: usize, value: &[u8]) {
+    let header = header_of(bytes, name);
+    bytes[header + at..header + at + value.len()].copy_from_slice(value);
+    reseal(bytes, header);
+}

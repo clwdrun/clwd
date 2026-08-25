@@ -263,8 +263,11 @@ impl Manifest {
             let digest = digest_text.parse::<Digest>()?;
 
             let size = get_int(table, "size", &key("size"))?;
-            if size < 0 || (size as u64) >= MAX_MEMBER_SIZE {
-                return Err(bad_value(&key("size"), "outside 0..8589934592"));
+            if size < 0 {
+                return Err(bad_value(&key("size"), "negative"));
+            }
+            if size as u64 >= MAX_MEMBER_SIZE {
+                return Err(Error::MemberTooLarge { size: size as u64 });
             }
             members.push(Member {
                 path,

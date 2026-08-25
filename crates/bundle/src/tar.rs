@@ -236,9 +236,8 @@ fn parse_size(bytes: &[u8], offset: usize) -> Result<u64, Error> {
     for byte in &bytes[..11] {
         size = size * 8 + u64::from(byte - b'0');
     }
-    if size >= 8 * 1024 * 1024 * 1024 {
-        return Err(Error::MemberTooLarge { size });
-    }
+    // No ceiling check: eleven octal digits cannot express 8589934592, so a
+    // header claiming more has already failed the encoding check above. §3.4.3.
     Ok(size)
 }
 
