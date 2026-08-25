@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: fmt-check clippy test lib-silent lib-bare spec-intact deny
+check: fmt-check clippy test lib-silent lib-bare spec-intact bundle-deps deny
 
 fmt:
     cargo fmt --all
@@ -54,6 +54,18 @@ spec-intact:
 # Re-record the hashes after a deliberate spec or fixture change.
 spec-reseal:
     cd docs/spec && sha256sum bundle-v1.md $(ls fixtures/* 2>/dev/null) > SHA256SUMS
+
+# clwd-bundle reads and writes bytes. A runtime dependency here reaches the
+# platform builder across the repo seam.
+bundle-deps:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    if cargo tree -p clwd-bundle -e normal | grep -qE 'wasmtime|tokio|clwd-runtime'; then
+      echo "error: clwd-bundle grew a runtime dependency"
+      cargo tree -p clwd-bundle -e normal
+      exit 1
+    fi
+    echo "ok: clwd-bundle has no runtime in its tree"
 
 # ==========================================
 # 2. BUILDS

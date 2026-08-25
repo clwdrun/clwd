@@ -15,10 +15,10 @@ pub mod manifest;
 pub mod path;
 pub mod tar;
 
-pub use digest::{BundleRef, Digest};
-pub use error::Error;
 pub use decode::{decode, Bundle};
+pub use digest::{BundleRef, Digest};
 pub use encode::{build, encode, Encoded, File};
+pub use error::Error;
 pub use manifest::{Capabilities, Limits, Manifest, Member, Runtime};
 
 pub type Result<T> = std::result::Result<T, Error>;

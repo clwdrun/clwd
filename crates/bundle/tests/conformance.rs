@@ -6,8 +6,7 @@ use clwd_bundle::{build, Capabilities, Limits, Runtime};
 /// The component-model preamble, which is also the smallest valid component.
 const APP_WASM: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00];
 
-const APP_DIGEST: &str =
-    "blake3:48d3a2e8a9b0cde6293ba7f68824a97d069d096f44335a9e86aee55238dcdcb8";
+const APP_DIGEST: &str = "blake3:48d3a2e8a9b0cde6293ba7f68824a97d069d096f44335a9e86aee55238dcdcb8";
 const MANIFEST_DIGEST: &str =
     "blake3:7e775181bd6658c8579ae0970bc214b43347f17b6b27e9eb817a088f8126a849";
 const BUNDLE_DIGEST: &str =
@@ -45,9 +44,17 @@ fn encoder_reproduces_the_specified_bundle_digest() {
 fn archive_has_the_specified_layout() {
     let bytes = vector().bytes;
     assert_eq!(bytes.len(), 3072, "six 512-byte blocks");
-    assert_eq!(&bytes[0..8], b"app.wasm", "app.wasm sorts first: 0x61 < 0x63");
+    assert_eq!(
+        &bytes[0..8],
+        b"app.wasm",
+        "app.wasm sorts first: 0x61 < 0x63"
+    );
     assert_eq!(&bytes[124..136], b"00000000010\0", "size, octal 10 = 8");
-    assert_eq!(&bytes[148..156], b"007405\0 ", "checksum: 6 digits, NUL, space");
+    assert_eq!(
+        &bytes[148..156],
+        b"007405\0 ",
+        "checksum: 6 digits, NUL, space"
+    );
     assert_eq!(bytes[156], 0x30, "typeflag is 0x30, not the 0x00 default");
     assert_eq!(&bytes[257..265], b"ustar\x0000");
     assert!(bytes[345..500].iter().all(|b| *b == 0), "prefix is empty");

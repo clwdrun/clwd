@@ -117,7 +117,13 @@ fn trailer_invalid() {
 
 #[test]
 fn path_invalid() {
-    for path in ["/absolute", "../escape", "a//b", "trailing/", "with\nnewline"] {
+    for path in [
+        "/absolute",
+        "../escape",
+        "a//b",
+        "trailing/",
+        "with\nnewline",
+    ] {
         assert_code(try_bundle(one_member(path, b"x")), "bundle.path_invalid");
     }
 }
@@ -139,8 +145,16 @@ fn path_too_long() {
 #[test]
 fn path_duplicate() {
     let files = vec![
-        File { path: "a.wasm".to_owned(), data: b"x".to_vec(), executable: false },
-        File { path: "a.wasm".to_owned(), data: b"y".to_vec(), executable: false },
+        File {
+            path: "a.wasm".to_owned(),
+            data: b"x".to_vec(),
+            executable: false,
+        },
+        File {
+            path: "a.wasm".to_owned(),
+            data: b"y".to_vec(),
+            executable: false,
+        },
     ];
     assert_code(try_bundle(files), "bundle.path_duplicate");
 }
@@ -155,7 +169,10 @@ fn manifest_missing() {
 
 #[test]
 fn manifest_not_toml() {
-    reject(&with_manifest("this is not [ toml"), "bundle.manifest_not_toml");
+    reject(
+        &with_manifest("this is not [ toml"),
+        "bundle.manifest_not_toml",
+    );
 }
 
 #[test]
@@ -178,8 +195,10 @@ fn unknown_key() {
     let top = valid_manifest_text().replace("runtime =", "telemetry = true\nruntime =");
     reject(&with_manifest(&top), "bundle.unknown_key");
 
-    let in_app = valid_manifest_text()
-        .replace("entrypoint = \"app.wasm\"", "entrypoint = \"app.wasm\"\npreload = []");
+    let in_app = valid_manifest_text().replace(
+        "entrypoint = \"app.wasm\"",
+        "entrypoint = \"app.wasm\"\npreload = []",
+    );
     reject(&with_manifest(&in_app), "bundle.unknown_key");
 
     let in_member = valid_manifest_text().replace("size = 8", "size = 8\ncompression = \"zstd\"");
@@ -202,9 +221,12 @@ fn capability_unknown_key() {
 fn capabilities_version_unsupported() {
     // Anchored to the table header: "version = 1" also matches inside
     // "schema_version = 1", which would test the wrong rule.
-    let text = valid_manifest_text()
-        .replace("[capabilities]\nversion = 1", "[capabilities]\nversion = 2");
-    reject(&with_manifest(&text), "bundle.capabilities_version_unsupported");
+    let text =
+        valid_manifest_text().replace("[capabilities]\nversion = 1", "[capabilities]\nversion = 2");
+    reject(
+        &with_manifest(&text),
+        "bundle.capabilities_version_unsupported",
+    );
 }
 
 #[test]
@@ -358,5 +380,8 @@ fn every_catalogue_entry_has_a_test() {
         .collect();
     untested.sort_unstable();
     untested.dedup();
-    assert!(untested.is_empty(), "catalogue entries with no test: {untested:?}");
+    assert!(
+        untested.is_empty(),
+        "catalogue entries with no test: {untested:?}"
+    );
 }

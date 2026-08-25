@@ -85,6 +85,41 @@ jobs:
       - name: deny
         run: cargo deny check --hide-inclusion-graph
 
+  # The bundle format's whole promise is that the same tree produces the same
+  # digest anywhere. Asserting that on one operating system asserts nothing:
+  # macOS hands filenames to a process in NFD and Linux in NFC, which is
+  # exactly the difference the canonicalization exists to erase. The fixture
+  # digest is compared against the same constant on both legs.
+  cross-platform-digest:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup show active-toolchain
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-bundle-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+      - run: cargo test -p clwd-bundle
+
+      # The library reads and writes bytes. If a runtime backend ever reaches
+      # it, the platform builder acquires one too, across the repository seam.
+      - name: clwd-bundle must not depend on wasmtime or a runtime
+        run: |
+          if cargo tree -p clwd-bundle -e normal | grep -qE 'wasmtime|tokio|clwd-runtime'; then
+            echo "::error::clwd-bundle grew a runtime dependency"
+            cargo tree -p clwd-bundle -e normal
+            exit 1
+          fi
+          echo "ok: clwd-bundle has no runtime in its tree"
+
   # Neither backend is in `default`, so an ordinary workspace build never
   # compiles them. Without this job they rot silently.
   backends:

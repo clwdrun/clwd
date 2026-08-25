@@ -54,7 +54,9 @@ impl FromStr for Digest {
     /// would give one digest two spellings, and a string-keyed cache would then
     /// hold two entries for one artifact.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let malformed = || Error::DigestMalformed { value: s.to_owned() };
+        let malformed = || Error::DigestMalformed {
+            value: s.to_owned(),
+        };
 
         let hex = s.strip_prefix(PREFIX).ok_or_else(malformed)?;
         if hex.len() != HEX_LEN {

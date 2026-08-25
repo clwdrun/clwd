@@ -63,7 +63,9 @@ pub struct Manifest {
 // ---------------------------------------------------------------- parsing
 
 fn missing(key: &str) -> Error {
-    Error::FieldMissing { key: key.to_owned() }
+    Error::FieldMissing {
+        key: key.to_owned(),
+    }
 }
 
 fn wrong_type(key: &str, expected: &'static str) -> Error {
@@ -97,7 +99,9 @@ fn get_str(table: &toml::Table, key: &str, path: &str) -> Result<String, Error> 
 
 fn get_int(table: &toml::Table, key: &str, path: &str) -> Result<i64, Error> {
     let value = table.get(key).ok_or_else(|| missing(path))?;
-    value.as_integer().ok_or_else(|| wrong_type(path, "an integer"))
+    value
+        .as_integer()
+        .ok_or_else(|| wrong_type(path, "an integer"))
 }
 
 fn get_table<'a>(table: &'a toml::Table, key: &str, path: &str) -> Result<&'a toml::Table, Error> {
@@ -161,9 +165,11 @@ fn reject_unknown(
 impl Manifest {
     /// Parse and validate, in the order §8 steps 11 to 15 require.
     pub fn parse(text: &str) -> Result<Self, Error> {
-        let root: toml::Table = text
-            .parse::<toml::Table>()
-            .map_err(|e| Error::ManifestNotToml { reason: e.to_string() })?;
+        let root: toml::Table =
+            text.parse::<toml::Table>()
+                .map_err(|e| Error::ManifestNotToml {
+                    reason: e.to_string(),
+                })?;
 
         // Step 11. Nothing else can be read until the schema is known.
         let schema_version = match root.get("schema_version") {
@@ -182,7 +188,13 @@ impl Manifest {
         // [capabilities]. §7.1.
         reject_unknown(
             &root,
-            &["schema_version", "runtime", "app", "members", "capabilities"],
+            &[
+                "schema_version",
+                "runtime",
+                "app",
+                "members",
+                "capabilities",
+            ],
             "",
             false,
         )?;
@@ -288,7 +300,10 @@ impl Manifest {
 
         let cpu_ms = get_int(limits, "cpu_ms", "capabilities.limits.cpu_ms")?;
         if cpu_ms < 1 || cpu_ms as u64 > MAX_CPU_MS {
-            return Err(bad_value("capabilities.limits.cpu_ms", "outside 1..=3600000"));
+            return Err(bad_value(
+                "capabilities.limits.cpu_ms",
+                "outside 1..=3600000",
+            ));
         }
         let memory_mb = get_int(limits, "memory_mb", "capabilities.limits.memory_mb")?;
         if memory_mb < 1 || memory_mb as u64 > MAX_MEMORY_MB {

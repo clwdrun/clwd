@@ -45,7 +45,7 @@ pub struct Entry {
     pub data: Vec<u8>,
 }
 
-fn field<'a>(block: &'a [u8], (at, len): (usize, usize)) -> &'a [u8] {
+fn field(block: &[u8], (at, len): (usize, usize)) -> &[u8] {
     &block[at..at + len]
 }
 
@@ -69,8 +69,7 @@ fn checksum(block: &[u8]) -> u32 {
 pub fn write_header(path: &str, len: u64, executable: bool) -> [u8; BLOCK] {
     let mut block = [0u8; BLOCK];
     block[NAME.0..NAME.0 + path.len()].copy_from_slice(path.as_bytes());
-    block[MODE.0..MODE.0 + MODE.1]
-        .copy_from_slice(if executable { MODE_EXEC } else { MODE_FILE });
+    block[MODE.0..MODE.0 + MODE.1].copy_from_slice(if executable { MODE_EXEC } else { MODE_FILE });
     block[UID.0..UID.0 + UID.1].copy_from_slice(ZERO_NUMERIC);
     block[GID.0..GID.0 + GID.1].copy_from_slice(ZERO_NUMERIC);
     block[SIZE.0..SIZE.0 + SIZE.1].copy_from_slice(format!("{len:011o}\0").as_bytes());
@@ -91,7 +90,7 @@ pub fn write_header(path: &str, len: u64, executable: bool) -> [u8; BLOCK] {
 /// compared against the one value the format permits, so an archive that would
 /// decode to the right content but differ in any byte is rejected here.
 pub fn read(stream: &[u8]) -> Result<Vec<Entry>, Error> {
-    if stream.is_empty() || stream.len() % BLOCK != 0 {
+    if stream.is_empty() || !stream.len().is_multiple_of(BLOCK) {
         return Err(Error::NotTar {
             reason: "length is zero or not a multiple of 512",
         });
@@ -124,7 +123,9 @@ pub fn read(stream: &[u8]) -> Result<Vec<Entry>, Error> {
         if mode != MODE_FILE && mode != MODE_EXEC {
             return Err(Error::ModeInvalid {
                 offset,
-                mode: String::from_utf8_lossy(mode).trim_end_matches('\0').to_owned(),
+                mode: String::from_utf8_lossy(mode)
+                    .trim_end_matches('\0')
+                    .to_owned(),
             });
         }
         for (name, got, want) in [
@@ -133,7 +134,10 @@ pub fn read(stream: &[u8]) -> Result<Vec<Entry>, Error> {
             ("mtime", field(block, MTIME), ZERO_MTIME),
         ] {
             if got != want {
-                return Err(Error::MetadataNotCanonical { offset, field: name });
+                return Err(Error::MetadataNotCanonical {
+                    offset,
+                    field: name,
+                });
             }
         }
         for (name, span) in [
@@ -145,7 +149,10 @@ pub fn read(stream: &[u8]) -> Result<Vec<Entry>, Error> {
             ("header tail", TAIL),
         ] {
             if field(block, span).iter().any(|b| *b != 0) {
-                return Err(Error::MetadataNotCanonical { offset, field: name });
+                return Err(Error::MetadataNotCanonical {
+                    offset,
+                    field: name,
+                });
             }
         }
 
@@ -175,7 +182,10 @@ pub fn read(stream: &[u8]) -> Result<Vec<Entry>, Error> {
             });
         }
         let data = stream[start..start + size as usize].to_vec();
-        if let Some(pad) = stream[start + size as usize..end].iter().position(|b| *b != 0) {
+        if let Some(pad) = stream[start + size as usize..end]
+            .iter()
+            .position(|b| *b != 0)
+        {
             return Err(Error::PaddingInvalid {
                 offset: start + size as usize + pad,
             });
