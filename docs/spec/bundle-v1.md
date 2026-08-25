@@ -192,14 +192,34 @@ The checksum is the unsigned sum of all 512 header bytes, with the eight bytes
 of the `chksum` field itself treated as ASCII spaces (`0x20`) for the purpose of
 the sum.
 
-It is stored as **six octal digits, zero-padded, then NUL, then space** — for
-example `007405\0` (`30 30 37 34 30 35 00 20`).
+It is stored as **six octal digits, zero-padded, then NUL, then space**. Byte by
+byte across the field's eight bytes:
+
+| Offset | Value |
+| --- | --- |
+| 148-153 | six ASCII octal digits, `0x30`-`0x37`, left-padded with `0x30` |
+| 154 | `0x00` |
+| 155 | `0x20` |
+
+A checksum of octal 7405 is therefore the eight bytes
+`30 30 37 34 30 35 00 20`. The NUL precedes the space; the reverse order is a
+different byte string. This document gives the field in hex rather than as a
+quoted string, because a trailing space inside a code span is invisible and an
+invisible byte in a canonicalization rule is a defect.
+
+Confirmed against GNU tar 1.35 with `--format=ustar` by inspecting the bytes it
+emits, not by reading its documentation.
 
 Both halves of this are places implementations diverge. Some sum the field's
 actual bytes instead of spaces, which makes the checksum unverifiable. Some
 store seven octal digits followed by NUL and no trailing space, which parses
 identically everywhere but is a different byte string and therefore a different
 digest.
+
+The checksum protects nothing in this format. BLAKE3 covers everything it covers
+and covers it better, so determinism is the field's only remaining job. That is
+exactly why it is pinned to the byte: which form is chosen matters far less than
+that exactly one form is permitted.
 
 A decoder MUST recompute the checksum and reject a mismatch with
 `bundle.checksum_invalid`. A decoder MUST also reject a checksum field that is
@@ -343,14 +363,16 @@ is `bundle.manifest_not_toml`.
 | `members[].digest` | string | yes | §4.1 string form | `bundle.field_missing` |
 | `members[].size` | integer | yes | `0 ≤ size < 8589934592` | `bundle.field_missing` |
 | `capabilities.version` | integer | yes | exactly `1` | `bundle.field_missing` |
-| `capabilities.egress` | array of string | no | see §5.3 | treated as `[]` |
-| `capabilities.secrets` | array of string | no | see §5.3 | treated as `[]` |
-| `capabilities.storage_namespaces` | array of string | no | see §5.3 | treated as `[]` |
+| `capabilities.egress` | array of string | yes | see §5.3 | `bundle.field_missing` |
+| `capabilities.secrets` | array of string | yes | see §5.3 | `bundle.field_missing` |
+| `capabilities.storage_namespaces` | array of string | yes | see §5.3 | `bundle.field_missing` |
 | `capabilities.limits.cpu_ms` | integer | yes | `1 ≤ n ≤ 3600000` | `bundle.field_missing` |
 | `capabilities.limits.memory_mb` | integer | yes | `1 ≤ n ≤ 65536` | `bundle.field_missing` |
 
 `[app]`, `[capabilities]` and `[capabilities.limits]` are required tables;
-`[[members]]` MUST have at least one element. A value of the wrong TOML type is
+`[[members]]` MUST have at least one element. **Every key above is required.**
+The manifest has exactly one shape: no optional keys, and therefore no key whose
+absence has to be assigned a meaning. A value of the wrong TOML type is
 `bundle.field_type_invalid`. A value of the right type outside its constraint is
 `bundle.field_value_invalid`.
 
@@ -364,9 +386,11 @@ this format does not tolerate that.
 
 ### 5.3 Capability arrays
 
-`egress`, `secrets` and `storage_namespaces` are **deny-by-default**: an absent
-key and an empty array both mean "none granted". There is no value meaning
-"all".
+`egress`, `secrets` and `storage_namespaces` are **deny-by-default**: an empty
+array means "none granted", and no value means "all". All three keys are
+required, so a bundle granting nothing says so in three explicit empty arrays
+rather than by omission. An absent grant and an empty grant would otherwise be
+two spellings of one thing, which §5.4 does not permit.
 
 Each element MUST be a non-empty string. Each array MUST be sorted byte-wise
 ascending and MUST NOT contain duplicates; otherwise
@@ -379,12 +403,16 @@ no case folding. Their grammar and their enforcement belong to #33. A decoder
 that guessed at their meaning would be a second, informal enforcement point
 disagreeing with the real one.
 
-### 5.4 Canonical serialization, for producers
+### 5.4 Canonical serialization
 
-Because the manifest's bytes are inside the bundle digest, two producers
-emitting semantically identical manifests with different formatting produce
-different bundle digests for the same application. A producer MUST therefore
-emit the manifest as follows:
+The manifest's bytes are inside the bundle digest, so two producers emitting
+semantically identical manifests with different formatting would produce
+different bundle digests for the same application — a duplicate artifact and a
+missed idempotency key, which is the same failure the §3.4 prefix rule exists to
+prevent. Canonical form is therefore **normative for producers and verified by
+decoders**, not merely recommended.
+
+A manifest MUST be serialized as follows:
 
 - UTF-8, no byte-order mark, LF line endings, exactly one trailing newline
 - No comments, no blank line before the first key, exactly one blank line before
@@ -399,12 +427,19 @@ emit the manifest as follows:
 - Tables in the order: top-level keys, `[app]`, each `[[members]]`,
   `[capabilities]`, `[capabilities.limits]`
 
-**A decoder does not verify this.** It cannot: verifying canonical form means
-re-emitting the manifest and comparing bytes, which would reject every unknown
-key — and §7 requires unknown keys outside `[capabilities]` to be ignored. The
-two rules are mutually exclusive, and forward compatibility wins. The sorting
-and duplicate rules in §5.2 and §5.3 are the part that *is* enforceable, and
-they cover the security-bearing fields.
+A decoder MUST verify this by re-serializing the parsed manifest under these
+rules and comparing the result byte-for-byte with the manifest as stored,
+rejecting a mismatch with `bundle.manifest_not_canonical`.
+
+That verification is only possible because §7 rejects unknown keys everywhere.
+An ignored key is a key the decoder cannot re-emit, so a decoder that tolerated
+one could not reproduce the bytes it was given, and every extended manifest
+would fail this check. The two rules stand or fall together: this format keeps
+both and gives up the ability to add an ignorable field without a version bump.
+
+The consequence worth stating plainly: **one logical manifest has exactly one
+byte representation, and anything else is not a bundle.** Two producers building
+the same application from the same inputs cannot produce two different digests.
 
 ## 6. Runtime validation
 
@@ -450,63 +485,91 @@ whether the agent inside it will start, is determined when the bundle is run.
 
 ## 7. Forward compatibility
 
-Three rules.
-
-**7.1 An unknown top-level key is rejected.** The top level carries
-`schema_version` and `runtime` — the keys that determine how everything else is
-read. A producer that adds one is speaking a dialect this version cannot
-evaluate.
+**7.1 An unknown key is rejected, wherever it appears.** Top level, `[app]`,
+inside a `[[members]]` element, `[capabilities]`, `[capabilities.limits]` — a
+key this version does not define is a key it cannot evaluate, and the bundle is
+rejected rather than partly understood.
 
 ```toml
 schema_version = 1
 runtime = "wasm"
-telemetry = true      # -> bundle.unknown_key
+telemetry = true             # -> bundle.unknown_key
 ```
-
-**7.2 An unknown key inside a versioned sub-object is ignored.** Every table
-below the top level is a versioned sub-object, governed by `schema_version`
-(except `[capabilities]`, which carries its own — see 7.3). This is the
-extension point: a v1 decoder reads a v2-produced manifest, ignores what it does
-not recognize, and runs the application correctly.
 
 ```toml
 [app]
 entrypoint = "app.wasm"
-preload = ["warmup.dat"]   # unknown -> ignored, bundle is valid
+preload = ["warmup.dat"]     # -> bundle.unknown_key
 ```
 
-The same applies inside a `[[members]]` element. Member metadata is not
-security-bearing: `path`, `digest` and `size` are required and checked, and no
-ignored key can weaken that.
-
-**7.3 An unknown key anywhere under `[capabilities]` is rejected.**
+**7.2 An unknown key under `[capabilities]` is rejected with its own code.**
 
 ```toml
 [capabilities]
 version = 1
-gpu = true            # -> bundle.capability_unknown_key
+gpu = true                   # -> bundle.capability_unknown_key
 ```
 
 ```toml
 [capabilities.limits]
 cpu_ms = 5000
 memory_mb = 128
-egress_bandwidth_mbps = 100   # -> bundle.capability_unknown_key
+egress_bandwidth_mbps = 100  # -> bundle.capability_unknown_key
 ```
 
-This is the whole reason `[capabilities]` carries its own `version`. A
-silently-ignored permission is a security bug: a v2 producer grants
-`gpu = true`, a v1 runtime ignores the key, and the bundle runs having been
-granted something no one is enforcing and no one has recorded refusing. Under
-7.2 that failure is silent. Under 7.3 it is a rejection at ingest naming the key
-the runtime is too old to honour.
-
-The rule covers the entire subtree, `[capabilities.limits]` included. A limit
-this version does not know about is a constraint it is not applying, which is
-the same defect as a permission it is not enforcing.
-
 `capabilities.version` is checked before any other key in the subtree; a value
-other than `1` is `bundle.capabilities_version_unsupported`.
+other than `1` is `bundle.capabilities_version_unsupported`. Its role is
+narrower than it would be under a lenient rule — it no longer gates whether
+unknown keys are rejected, since 7.1 rejects them everywhere. It remains so the
+capability vocabulary can be versioned on its own cadence: a runtime can refuse
+a capability set it is too old to enforce, and say so by version, without
+`schema_version` having to move every time a permission is added.
+
+The outcome is the same rejection; the distinct code carries a materially
+different remediation. `bundle.unknown_key` says a producer emitted a field this
+version does not define — usually a typo or a newer toolchain. Under
+`[capabilities]` it says something more specific: *this bundle is asking for a
+permission or a limit that your runtime cannot enforce.* An operator reading a
+log needs to tell those apart, so the format tells them apart.
+
+**7.3 Evolution goes through a version field, never through an ignored key.**
+Adding, removing or changing the meaning of any key requires bumping
+`schema_version`; changing the capability vocabulary alone may instead bump
+`capabilities.version`. A v1 decoder rejects a v2 bundle on the version field,
+naming the version it does not support, rather than on whichever unknown key it
+happened to reach first.
+
+### 7.4 Why unknown keys are not ignored
+
+The lenient alternative — ignore unknown keys in sub-tables, reject them only
+under `[capabilities]` — buys one thing: a v1 host can run a v2 bundle that
+added a field, without a version bump. This format gives that up, for three
+reasons.
+
+**The manifest is identity-bearing.** Its bytes are inside the bundle digest, so
+a v2 bundle with an extra field is already a different bundle with a different
+digest. "Ignorable" overstates what leniency achieves: it does not make the two
+artifacts the same, it only makes the older host willing to run the newer one.
+
+**Ignoring keys and verifying canonical form are mutually exclusive**, and
+canonical form is worth more. A decoder that ignores a key cannot re-emit the
+manifest it was handed, so it cannot check that the manifest is in canonical
+form, so two producers can emit byte-different manifests for identical content
+and mint two digests for one artifact. §5.4 explains what that costs. Rejecting
+unknown keys buys back the guarantee that one logical manifest has exactly one
+byte representation.
+
+**Today's non-security-bearing table is tomorrow's security-bearing one.**
+`[capabilities]` is special-cased under the lenient rule because it is *known
+now* to carry permissions. Nothing says `[app]` will not later carry `env`,
+`run_as` or `mount` — and on the day it does, every deployed v1 host silently
+ignores it. The lenient rule requires predicting which future field is dangerous.
+The strict rule does not have to be right about that.
+
+What is given up is real: a mixed-version fleet cannot roll a manifest change
+forward without every host understanding it. For an identity-bearing document
+that gates capabilities, being unable to add a field quietly is closer to a
+feature than a cost.
 
 ## 8. Validation order
 
@@ -529,20 +592,26 @@ across the seam and across languages.
 | 9 | `clwd.toml` present | `bundle.manifest_missing` |
 | 10 | Manifest parses as TOML | `bundle.manifest_not_toml` |
 | 11 | `schema_version` present and equals 1 | `bundle.schema_version_missing`, `bundle.schema_version_unsupported` |
-| 12 | No unknown top-level key | `bundle.unknown_key` |
+| 12 | No unknown key at the top level or in any table outside `[capabilities]` | `bundle.unknown_key` |
 | 13 | `capabilities.version` equals 1 | `bundle.field_missing`, `bundle.capabilities_version_unsupported` |
-| 14 | No unknown key under `[capabilities]` | `bundle.capability_unknown_key` |
+| 14 | No unknown key anywhere under `[capabilities]` | `bundle.capability_unknown_key` |
 | 15 | Required keys present, types correct, values in range, arrays sorted and duplicate-free | `bundle.field_missing`, `bundle.field_type_invalid`, `bundle.field_value_invalid`, `bundle.runtime_unknown` |
-| 16 | Every member digest string is well-formed | `bundle.digest_malformed` |
-| 17 | `clwd.toml` not self-listed; listed set equals archive set minus the manifest; `[[members]]` sorted | `bundle.manifest_self_listed`, `bundle.member_missing`, `bundle.member_unlisted`, `bundle.field_value_invalid` |
-| 18 | Each member's actual length equals its declared `size` | `bundle.member_size_mismatch` |
-| 19 | Each member's BLAKE3 equals its declared `digest` | `bundle.member_digest_mismatch` |
-| 20 | `app.entrypoint` names a listed member | `bundle.entrypoint_not_a_member` |
-| 21 | Runtime check per §6 | `bundle.wasm_not_component`, `bundle.wasm_preamble_invalid` |
+| 16 | Manifest re-serializes byte-identically per §5.4 | `bundle.manifest_not_canonical` |
+| 17 | Every member digest string is well-formed | `bundle.digest_malformed` |
+| 18 | `clwd.toml` not self-listed; listed set equals archive set minus the manifest; `[[members]]` sorted | `bundle.manifest_self_listed`, `bundle.member_missing`, `bundle.member_unlisted`, `bundle.field_value_invalid` |
+| 19 | Each member's actual length equals its declared `size` | `bundle.member_size_mismatch` |
+| 20 | Each member's BLAKE3 equals its declared `digest` | `bundle.member_digest_mismatch` |
+| 21 | `app.entrypoint` names a listed member | `bundle.entrypoint_not_a_member` |
+| 22 | Runtime check per §6 | `bundle.wasm_not_component`, `bundle.wasm_preamble_invalid` |
+
+Step 16 comes after step 15 because re-serialization needs a fully validated
+model: canonical form is defined over values of the right type in the right
+range, so checking it against a manifest that has not been through step 15 would
+report a formatting fault for what is really a type error.
 
 ### 8.1 Why member digests are verified before the runtime preamble check
 
-Step 19 precedes step 21 deliberately.
+Step 20 precedes step 22 deliberately.
 
 The preamble check *interprets* the entrypoint's bytes — it reads them and
 branches on what they say. The member digest check *authenticates* them. Running
@@ -609,7 +678,8 @@ source.
 | `bundle.manifest_not_toml` | `clwd.toml` is not valid TOML |
 | `bundle.schema_version_missing` | No `schema_version` key |
 | `bundle.schema_version_unsupported` | `schema_version` is not `1` |
-| `bundle.unknown_key` | An unrecognized top-level key |
+| `bundle.unknown_key` | An unrecognized key at the top level or in any table outside `[capabilities]` |
+| `bundle.manifest_not_canonical` | The manifest does not re-serialize byte-identically under §5.4 |
 | `bundle.capability_unknown_key` | An unrecognized key anywhere under `[capabilities]` |
 | `bundle.capabilities_version_unsupported` | `capabilities.version` is not `1` |
 | `bundle.field_missing` | A required key is absent |
@@ -646,6 +716,12 @@ source.
 
 An implementation that produces these bytes for these inputs is canonicalizing
 correctly. An implementation that does not has a bug, wherever it is.
+
+This vector is the arbiter, not the prose above it. A specification paragraph
+can be misread; a byte array cannot. An implementation SHOULD commit these bytes
+as a test fixture and assert its encoder reproduces them exactly, and an
+independent implementer SHOULD check against them before anything else in this
+document.
 
 **Input:** two files, no executable bit.
 
@@ -696,9 +772,9 @@ digest = blake3:7e775181bd6658c8579ae0970bc214b43347f17b6b27e9eb817a088f8126a849
 
 | Offset | Contents |
 | --- | --- |
-| 0 | header, `app.wasm`, `size` = `00000000010\0` (octal 10 = 8), `chksum` = `007405\0` |
+| 0 | header, `app.wasm`, `size` = `00000000010\0` (octal 10 = 8), `chksum` = `30 30 37 34 30 35 00 20` |
 | 512 | 8 content bytes, 504 NUL padding |
-| 1024 | header, `clwd.toml`, `size` = `00000000500\0` (octal 500 = 320), `chksum` = `007566\0` |
+| 1024 | header, `clwd.toml`, `size` = `00000000500\0` (octal 500 = 320), `chksum` = `30 30 37 35 36 36 00 20` |
 | 1536 | 320 content bytes, 192 NUL padding |
 | 2048 | 512 NUL — first trailer block |
 | 2560 | 512 NUL — second trailer block |
