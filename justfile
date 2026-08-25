@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: fmt-check clippy test lib-silent lib-bare spec-intact bundle-deps deny
+check: fmt-check clippy test lib-silent lib-bare spec-intact bundle-deps trait-deps deny
 
 fmt:
     cargo fmt --all
@@ -66,6 +66,19 @@ bundle-deps:
       exit 1
     fi
     echo "ok: clwd-bundle has no runtime in its tree"
+
+# The Sandbox trait is the one abstraction the control plane sees, and it must
+# not leak a backend type. With no features on, no backend crate may appear.
+trait-deps:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    if cargo tree -p clwd-runtime -e normal \
+       | grep -qE 'wasmtime|wasi|hyper|firecracker|vsock|landlock|seccompiler'; then
+      echo "error: a backend type reached the Sandbox trait surface"
+      cargo tree -p clwd-runtime -e normal
+      exit 1
+    fi
+    echo "ok: no backend crate in the trait surface"
 
 # ==========================================
 # 2. BUILDS

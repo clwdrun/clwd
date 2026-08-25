@@ -79,6 +79,23 @@ jobs:
       - name: spec and fixtures have not drifted
         run: cd docs/spec && sha256sum -c SHA256SUMS
 
+      # The control plane holds one `dyn Sandbox` and never branches on the
+      # backend. That only holds if no backend type reaches the trait, so with
+      # no features on, no backend crate may appear in the tree.
+      - name: no backend type reaches the Sandbox trait surface
+        run: |
+          if cargo tree -p clwd-runtime -e normal \
+             | grep -qE 'wasmtime|wasi|hyper|firecracker|vsock|landlock|seccompiler'; then
+            echo "::error::a backend type reached the Sandbox trait surface"
+            cargo tree -p clwd-runtime -e normal
+            exit 1
+          fi
+          echo "ok: no backend crate in the trait surface"
+
+      # The trait must compile with both backends off.
+      - name: trait surface builds with no backend
+        run: cargo check -p clwd-runtime --no-default-features
+
       - name: install cargo-deny
         run: cargo install cargo-deny --locked --version ^0.20
 
