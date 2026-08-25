@@ -93,3 +93,29 @@ fn canonical_manifest_matches_the_specification_text() {
     let produced = std::str::from_utf8(&bytes[1536..1536 + 320]).expect("utf-8");
     assert_eq!(produced, documented);
 }
+
+/// The vector as a committed byte fixture. Regenerate deliberately with
+/// `just spec-reseal` after a spec change, never to make this test pass.
+#[test]
+fn matches_the_committed_fixture() {
+    let fixture = include_bytes!("../../../docs/spec/fixtures/conformance-v1.clwd");
+    assert_eq!(
+        vector().bytes,
+        fixture.as_slice(),
+        "encoder output drifted from the committed conformance fixture"
+    );
+}
+
+/// Regenerates the fixture. A generator, not a test, so it is ignored by
+/// default: run it deliberately after a spec change with
+/// `cargo test -p clwd-bundle --test conformance -- --ignored`, then
+/// `just spec-reseal`. Never run it to make the test above pass.
+#[test]
+#[ignore = "generator; run deliberately after a spec change"]
+fn regenerate_fixture() {
+    let out = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/spec/fixtures/conformance-v1.clwd"
+    );
+    std::fs::write(out, vector().bytes).expect("write the fixture");
+}

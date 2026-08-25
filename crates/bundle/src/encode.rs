@@ -34,7 +34,11 @@ pub fn build(
     capabilities: Capabilities,
     members: Vec<File>,
 ) -> Result<Encoded, Error> {
-    let members = normalize(members)?;
+    let mut members = normalize(members)?;
+    // §5.2: [[members]] is sorted by path, the same order as the archive
+    // entries. Sorting here rather than trusting the caller's order is what
+    // makes the output independent of the order files were discovered in.
+    members.sort_by(|a, b| a.path.as_bytes().cmp(b.path.as_bytes()));
 
     let manifest = Manifest {
         schema_version: SCHEMA_VERSION,
