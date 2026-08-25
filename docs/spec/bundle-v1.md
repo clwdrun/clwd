@@ -419,8 +419,11 @@ A manifest MUST be serialized as follows:
   each table header
 - Key order exactly as listed in §5.2
 - `key = value`, one space either side of `=`
-- Strings as TOML basic strings in double quotes, escaping only `"`, `\` and
-  codepoints below U+0020
+- Strings as TOML basic strings in double quotes, escaping only `"` as `\"`
+  and `\` as `\\`. No other escape appears, because no other character needs
+  one: control characters are rejected outright (§5.5), so there is no
+  codepoint below U+0020 to encode and no choice to make between `\n` and
+  `\u000A`
 - Integers in decimal, no underscores, no leading zeros, no leading `+`
 - Empty arrays as `[]`; non-empty arrays on one line as `["a", "b"]`, elements
   in the sorted order required by §5.3
@@ -440,6 +443,20 @@ both and gives up the ability to add an ignorable field without a version bump.
 The consequence worth stating plainly: **one logical manifest has exactly one
 byte representation, and anything else is not a bundle.** Two producers building
 the same application from the same inputs cannot produce two different digests.
+
+### 5.5 String values
+
+Every string value in the manifest — `runtime`, `app.entrypoint`, each
+`members[].path` and `members[].digest`, and every capability array element —
+MUST NOT contain a Unicode control character: nothing in U+0000–U+001F or
+U+007F. A manifest carrying one is rejected with `bundle.field_value_invalid`.
+
+The rule exists to close a canonicalization gap rather than to defend against
+anything. TOML can spell a control character several ways — `\n`, `\u000A`, and
+in a literal string the raw byte — and §5.4 would then have to pick one and
+require every implementation to agree. Forbidding the character removes the
+choice. Member paths already reject control characters under §3.2 for a
+different reason; this extends the same rule to the values around them.
 
 ## 6. Runtime validation
 
