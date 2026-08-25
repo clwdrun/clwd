@@ -3,7 +3,9 @@
 //!
 //! Rebuild with `just rebuild-guest`.
 
-wit_bindgen::generate!({ path: "wit", world: "app", generate_all });
+// The canonical WIT, not a copy. A copy would be 28 duplicated files that can
+// drift from wit/ silently between rebuilds.
+wit_bindgen::generate!({ path: "../../../../../wit", world: "app", generate_all });
 
 use exports::wasi::http::incoming_handler::Guest;
 use wasi::http::types::{Fields, IncomingRequest, OutgoingBody, OutgoingResponse, ResponseOutparam};
