@@ -114,3 +114,11 @@ wit-check:
 
 clean:
     cargo clean
+
+# Rebuild the wasm test guest. Its output is committed so CI needs no guest
+# toolchain; run this after changing wit/ or the guest source.
+rebuild-guest:
+    cd crates/runtime/tests/fixtures/guest && rm -rf wit && cp -r ../../../../../wit wit
+    cd crates/runtime/tests/fixtures/guest && cargo build --release --target wasm32-wasip2
+    cp crates/runtime/tests/fixtures/guest/target/wasm32-wasip2/release/clwd_test_guest.wasm \
+       crates/runtime/tests/fixtures/app.wasm

@@ -6,3 +6,7 @@ docs/spec/fixtures/** -text -diff
 # The specification itself defines bytes, including whitespace inside code
 # spans. Keep line endings out of it.
 docs/spec/*.md -text
+
+# Test fixtures are binaries: a component and a core module. Nothing may
+# normalize line endings or trim bytes in them.
+crates/runtime/tests/fixtures/*.wasm -text -diff

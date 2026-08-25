@@ -2,3 +2,4 @@ target/
 **/*.rs.bk
 .DS_Store
 wip/
+crates/runtime/tests/fixtures/guest/target/

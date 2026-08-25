@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+# A wasm32-wasip2 guest built as a test fixture, not a workspace member: it
+# targets a different architecture and has its own lockfile.
+exclude = ["crates/runtime/tests/fixtures/guest"]
 # clwd-agent is musl-only and built via its own CI job / `-p` flag,
 # not as part of a plain `cargo build --workspace`.
 default-members = [

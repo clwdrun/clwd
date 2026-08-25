@@ -138,6 +138,26 @@ impl WasmSandbox {
     pub async fn cached_components(&self) -> usize {
         self.cache.len().await
     }
+
+    /// Resolve a digest to the bytes of the component to run.
+    ///
+    /// A bundle is a tar archive, not a component: what wasmtime compiles is
+    /// the member `app.entrypoint` names. Decoding also validates, so a core
+    /// module is rejected here — `clwd-bundle`'s ingest gate — before wasmtime
+    /// gets a second look at it.
+    async fn entrypoint(&self, bundle: &BundleRef) -> Result<Vec<u8>> {
+        let bytes = self.store.fetch(bundle).await?;
+        let decoded = clwd_bundle::decode(&bytes, Some(*bundle))?;
+        let entrypoint = &decoded.manifest.entrypoint;
+        decoded
+            .members
+            .into_iter()
+            .find(|m| &m.path == entrypoint)
+            .map(|m| m.data)
+            .ok_or_else(|| Error::Internal {
+                source: format!("entrypoint {entrypoint:?} missing after validation").into(),
+            })
+    }
 }
 
 #[async_trait]
@@ -149,11 +169,7 @@ impl Sandbox for WasmSandbox {
         opts: SpawnOptions,
     ) -> Result<Handle> {
         let deadline = opts.deadline;
-        let bytes = self.store.fetch(&bundle).await?;
-
-        // Validate the artifact before compiling it. `clwd-bundle` rejects a
-        // core module at ingest; this is the second gate, and it is free.
-        clwd_bundle::decode(&bytes, Some(bundle))?;
+        let bytes = self.entrypoint(&bundle).await?;
 
         let expired = || Error::DeadlineExceeded {
             phase: Phase::Spawn,
@@ -206,7 +222,7 @@ impl Sandbox for WasmSandbox {
             (instance.bundle, Arc::clone(&instance.logs))
         };
 
-        let bytes = self.store.fetch(&bundle).await?;
+        let bytes = self.entrypoint(&bundle).await?;
         let component = self.cache.get_or_compile(&bundle, &bytes).await?;
 
         let call = invoke::run(
