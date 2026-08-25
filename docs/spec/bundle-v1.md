@@ -233,10 +233,17 @@ GNU extension signalled by a high bit in the first byte — MUST be rejected wit
 `bundle.size_encoding_invalid`.
 
 The field's ceiling is therefore `0o77777777777` = 8589934591 bytes, one byte
-under 8 GiB. A member of 8 GiB or larger MUST be rejected with
-`bundle.member_too_large` rather than encoded some other way. No realistic
-bundle approaches this; it is stated because an unstated limit is where a format
-grows an extension.
+under 8 GiB. **The ceiling is structural rather than checked**: eleven octal
+digits cannot express 8589934592, and a twelfth digit would occupy the NUL, so a
+header claiming more is rejected as `bundle.size_encoding_invalid` — it is a
+malformed field, not an oversized member.
+
+`bundle.member_too_large` therefore never arises from a header. It applies where
+a number larger than the ceiling *can* be written down: the manifest's declared
+`members[].size` (§5.2), and an encoder handed a file at or above the ceiling.
+
+No realistic bundle approaches this. It is stated because an unstated limit is
+where a format grows an extension.
 
 ### 3.5 Entry data
 
@@ -361,7 +368,7 @@ is `bundle.manifest_not_toml`.
 | `app.entrypoint` | string | yes | equals the `path` of exactly one member | `bundle.field_missing` |
 | `members[].path` | string | yes | a §3.2 path present in the archive | `bundle.field_missing` |
 | `members[].digest` | string | yes | §4.1 string form | `bundle.field_missing` |
-| `members[].size` | integer | yes | `0 ≤ size < 8589934592` | `bundle.field_missing` |
+| `members[].size` | integer | yes | `0 ≤ size < 8589934592`, else `bundle.member_too_large` | `bundle.field_missing` |
 | `capabilities.version` | integer | yes | exactly `1` | `bundle.field_missing` |
 | `capabilities.egress` | array of string | yes | see §5.3 | `bundle.field_missing` |
 | `capabilities.secrets` | array of string | yes | see §5.3 | `bundle.field_missing` |
@@ -624,7 +631,7 @@ across the seam and across languages.
 | 0 | If the caller supplied an expected `BundleRef`, compute the bundle digest over the whole stream and compare | `bundle.digest_mismatch` |
 | 1 | Length is a non-zero multiple of 512 | `bundle.not_tar` |
 | 2 | Walk blocks: header fields per §3.4 — magic, version, typeflag, prefix, mode, uid, gid, mtime, uname, gname, linkname, devmajor, devminor | `bundle.magic_invalid`, `bundle.entry_type_invalid`, `bundle.prefix_not_empty`, `bundle.mode_invalid`, `bundle.metadata_not_canonical` |
-| 3 | Per header: `size` encoding and ceiling | `bundle.size_encoding_invalid`, `bundle.member_too_large` |
+| 3 | Per header: `size` encoding. The ceiling needs no check — see §3.4.3 | `bundle.size_encoding_invalid` |
 | 4 | Per header: checksum recomputed and re-encoded | `bundle.checksum_invalid` |
 | 5 | Per entry: path rules of §3.2 | `bundle.path_invalid`, `bundle.path_not_nfc`, `bundle.path_too_long`, `bundle.path_duplicate` |
 | 6 | Per entry: data padding is NUL | `bundle.padding_invalid` |
@@ -696,8 +703,8 @@ source.
 | `bundle.mode_invalid` | `mode` is neither `0000644\0` nor `0000755\0` |
 | `bundle.metadata_not_canonical` | `mtime`, `uid` or `gid` non-zero, or `uname`, `gname`, `linkname`, `devmajor` or `devminor` non-empty |
 | `bundle.checksum_invalid` | Header checksum does not recompute, or is not encoded as six octal digits, NUL, space |
-| `bundle.size_encoding_invalid` | `size` is not 11 octal digits followed by NUL — includes GNU base-256 |
-| `bundle.member_too_large` | A declared size is 8589934592 or greater |
+| `bundle.size_encoding_invalid` | `size` is not 11 octal digits followed by NUL — includes GNU base-256, and any value too large for the field |
+| `bundle.member_too_large` | `members[].size`, or a file handed to an encoder, is 8589934592 or greater. Never produced by a header — see §3.4.3 |
 | `bundle.padding_invalid` | A data padding byte is not NUL |
 | `bundle.entries_not_sorted` | Entries are not byte-wise ascending by path |
 | `bundle.trailer_invalid` | Trailer is not exactly two zero blocks, or bytes follow it |
