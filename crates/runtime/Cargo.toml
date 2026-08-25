@@ -8,6 +8,9 @@ description = "Sandbox trait plus wasmtime and Firecracker backends"
 
 [features]
 default = []
+# A scripted backend for exercising the lifecycle with no wasmtime and no KVM.
+# #20 builds its conformance suite on this rather than replacing it.
+test-util = []
 wasm = ["dep:wasmtime", "dep:wasmtime-wasi-http"]
 microvm = [
   "dep:hyper",
@@ -20,8 +23,12 @@ microvm = [
 ]
 
 [dependencies]
+clwd-bundle = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
+futures-core = { workspace = true }
+http = { workspace = true }
+bytes = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }

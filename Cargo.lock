@@ -543,6 +543,10 @@ name = "clwd-runtime"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bytes",
+ "clwd-bundle",
+ "futures-core",
+ "http",
  "hyper",
  "hyperlocal",
  "landlock",
