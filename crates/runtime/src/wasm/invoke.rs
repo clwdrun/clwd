@@ -7,22 +7,33 @@
 use std::sync::Arc;
 
 use http_body_util::BodyExt;
-use wasmtime::{Engine, Store};
+use wasmtime::{Engine, Store, UpdateDeadline};
 use wasmtime_wasi_http::p2::bindings::http::types::Scheme;
 use wasmtime_wasi_http::p2::body::HyperIncomingBody;
 use wasmtime_wasi_http::WasiHttpView;
 
 use crate::call::{Body, Request, RequestId, Response};
-use crate::error::{Error, Result};
+use crate::error::{Error, Phase, Result};
 use crate::identity::IdentityCtx;
+use crate::wasm::budget::Budget;
 use crate::wasm::cache::Prepared;
 use crate::wasm::host::{self, StoreState};
+use crate::wasm::limits::LimitExceeded;
 use crate::wasm::logs::InstanceLogs;
+
+/// How long a guest may run before yielding to the executor, in epoch ticks.
+///
+/// This bounds monopolisation, not consumption: a guest that yields every 5ms
+/// still runs until its budget is spent. The final slice is trimmed to whatever
+/// budget remains, so enforcement stays accurate to a single tick while yields
+/// stay infrequent enough not to cost a fiber switch every millisecond.
+const SLICE_TICKS: u64 = 5;
 
 pub(super) async fn run(
     engine: &Engine,
     prepared: &Prepared,
     identity: IdentityCtx,
+    budget: Budget,
     req: Request,
     request_id: Option<RequestId>,
     logs: Arc<InstanceLogs>,
@@ -30,20 +41,44 @@ pub(super) async fn run(
     let (stdout, stderr) = host::sinks();
     let mut store = Store::new(
         engine,
-        StoreState::new(identity, stdout.clone(), stderr.clone()),
+        StoreState::new(identity, &budget, stdout.clone(), stderr.clone()),
     );
 
-    // `Config::epoch_interruption(true)` starts every Store's deadline at zero,
-    // so WITHOUT THIS LINE every guest call traps immediately with
-    // "wasm trap: interrupt" — and the failure reads like a wasmtime bug rather
-    // than a missing default. #17 replaces this with a real budget; until then
-    // the host-level timeout below is what bounds a call.
-    store.set_epoch_deadline(u64::MAX);
+    // Resource caps. `Store::limiter` resolves the limiter out of the store's
+    // own data, so nothing is shared between guests.
+    store.limiter(|state| &mut state.limiter);
+
+    // The execution-time budget, in ticks. One tick is one millisecond, so
+    // `cpu_ms` is a tick count with no conversion.
+    //
+    // The guest runs in slices: at each deadline the callback yields to the
+    // executor and extends, until the budget is spent and it interrupts
+    // instead. Yielding is fairness — one guest cannot monopolise a worker.
+    // Interrupting is enforcement. They are not alternatives, and a design with
+    // only the yield would let a spinning guest run forever, politely.
+    //
+    // Nothing here fires unless the epoch is advancing; see `epoch.rs` for why
+    // that ticker is an OS thread.
+    let mut remaining = budget.cpu_ticks.max(1);
+    let mut slice = remaining.clamp(1, SLICE_TICKS);
+    store.set_epoch_deadline(slice);
+    store.epoch_deadline_callback(move |_ctx| {
+        remaining = remaining.saturating_sub(slice);
+        if remaining == 0 {
+            // Budget spent. Raises `Trap::Interrupt`, which the error mapping
+            // below turns into `runtime.deadline_exceeded` rather than a trap.
+            return Ok(UpdateDeadline::Interrupt);
+        }
+        // Trim the last slice to what is left, so the budget is enforced to the
+        // tick rather than to the slice.
+        slice = remaining.clamp(1, SLICE_TICKS);
+        Ok(UpdateDeadline::Yield(slice))
+    });
 
     let proxy = prepared
         .instantiate_async(&mut store)
         .await
-        .map_err(|e| trap(e, "instantiating"))?;
+        .map_err(|e| classify(e, Phase::Spawn, &budget, "instantiating"))?;
 
     let (parts, body) = req.into_parts();
     // `Full` hands the `Bytes` out as a single frame: the buffer is moved, not
@@ -81,7 +116,7 @@ pub(super) async fn run(
     lines.extend(stderr.drain(request_id.as_ref()));
     logs.publish(lines);
 
-    call.map_err(|e| trap(e, "guest"))?;
+    call.map_err(|e| classify(e, Phase::Invoke, &budget, "guest"))?;
 
     let response = rx
         .await
@@ -106,9 +141,119 @@ pub(super) async fn run(
     Ok(Response::from_parts(parts, Body::from(collected)))
 }
 
-/// A guest trap keeps its message: it is the only diagnostic an app author has.
-fn trap(error: wasmtime::Error, during: &str) -> Error {
+/// Turn a failure out of wasm into the right error.
+///
+/// # On `Phase::Spawn`
+///
+/// Both phases are mapped, but an epoch interrupt during instantiation is not
+/// reachable with an ordinary component: instantiation runs no guest loops and
+/// completes in tens of microseconds, far inside any budget the manifest can
+/// express. Cold start is bounded by the caller's wall-clock deadline instead,
+/// which `spawn` enforces. The phase is threaded through anyway so a component
+/// with an expensive start is classified correctly rather than surprisingly.
+///
+///
+/// Three outcomes that must not be conflated, because they call for different
+/// responses: the guest asked for more than it was given, the guest ran longer
+/// than it was given, or the guest is broken.
+///
+/// The order matters. A limiter denial arrives *as* a trap carrying the typed
+/// error, and an epoch interrupt arrives as `Trap::Interrupt`, so both must be
+/// recognised before the fallback claims them as ordinary traps.
+fn classify(error: wasmtime::Error, phase: Phase, budget: &Budget, during: &str) -> Error {
+    // A denial is only ever present on the denial path, so this cannot
+    // mis-attribute a guest that handled a failed grow and later trapped for an
+    // unrelated reason.
+    if let Some(exceeded) = error.downcast_ref::<LimitExceeded>() {
+        return Error::ResourceExhausted {
+            limit: exceeded.limit,
+            requested: exceeded.requested,
+            allowed: exceeded.allowed,
+        };
+    }
+
+    // `UpdateDeadline::Interrupt` raises exactly this. Distinguishing "ran too
+    // long" from "the guest panicked" is why both codes exist.
+    if matches!(
+        error.downcast_ref::<wasmtime::Trap>(),
+        Some(wasmtime::Trap::Interrupt)
+    ) {
+        return Error::DeadlineExceeded {
+            phase,
+            limit: budget.cpu,
+        };
+    }
+
+    // Everything else is the guest's own fault, and its message is the only
+    // diagnostic an app author gets.
     Error::Trap {
         message: format!("{during}: {error:?}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn budget() -> Budget {
+        Budget {
+            cpu_ticks: 50,
+            cpu: Duration::from_millis(50),
+            memory_bytes: 4 * 1024 * 1024,
+        }
+    }
+
+    /// A limiter denial arrives as a trap carrying the typed error, so it must
+    /// be recognised before the fallback claims it.
+    #[test]
+    fn a_limiter_denial_maps_to_resource_exhausted() {
+        let error = wasmtime::Error::from(LimitExceeded {
+            limit: "memory",
+            requested: 8,
+            allowed: 4,
+        });
+        let mapped = classify(error, Phase::Invoke, &budget(), "guest");
+        assert_eq!(mapped.code(), "runtime.resource_exhausted");
+    }
+
+    /// `UpdateDeadline::Interrupt` raises `Trap::Interrupt`. Both phases map,
+    /// though only the invoke phase is reachable in practice — see the note on
+    /// `classify`.
+    #[test]
+    fn an_epoch_interrupt_maps_to_deadline_exceeded_in_either_phase() {
+        for phase in [Phase::Spawn, Phase::Invoke] {
+            let mapped = classify(
+                wasmtime::Trap::Interrupt.into(),
+                phase,
+                &budget(),
+                "instantiating",
+            );
+            assert_eq!(mapped.code(), "runtime.deadline_exceeded");
+            assert!(
+                matches!(mapped, Error::DeadlineExceeded { phase: p, .. } if p == phase),
+                "the phase must survive the mapping"
+            );
+        }
+    }
+
+    /// The fallback must not over-claim. Another trap kind is the guest's own
+    /// fault and keeps its message.
+    #[test]
+    fn any_other_trap_stays_a_trap() {
+        let mapped = classify(
+            wasmtime::Trap::UnreachableCodeReached.into(),
+            Phase::Invoke,
+            &budget(),
+            "guest",
+        );
+        assert_eq!(mapped.code(), "runtime.trap");
+        // The guest's own message survives: it is the only diagnostic an app
+        // author gets. `Display` renders the trap in prose, not as the Rust
+        // variant name.
+        assert!(
+            mapped.to_string().contains("unreachable"),
+            "the trap message must survive the mapping: {mapped}"
+        );
     }
 }

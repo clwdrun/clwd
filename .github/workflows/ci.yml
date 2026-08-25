@@ -107,8 +107,17 @@ jobs:
       - name: trait surface builds with no backend
         run: cargo check -p clwd-runtime --no-default-features
 
+      # `~/.cargo/bin` is in the cache, so on a warm cache the binary is already
+      # there and a plain `cargo install` fails with "binary already exists".
+      # That stayed hidden while every pull request added a dependency and so
+      # got a fresh cache key; the first one that leaves Cargo.lock alone
+      # restores main's cache and hits it. Reuse what the cache gave us.
       - name: install cargo-deny
-        run: cargo install cargo-deny --locked --version ^0.20
+        run: |
+          if ! command -v cargo-deny >/dev/null 2>&1; then
+            cargo install cargo-deny --locked --version ^0.20
+          fi
+          cargo-deny --version
 
       - name: deny
         run: cargo deny check --hide-inclusion-graph

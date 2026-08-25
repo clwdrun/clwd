@@ -40,10 +40,13 @@
 //!   they cannot observe each other. That falls out of the model rather than
 //!   being arranged.
 
+mod budget;
 mod cache;
 mod engine;
+mod epoch;
 mod host;
 mod invoke;
+mod limits;
 mod logs;
 
 use std::collections::HashMap;
@@ -59,6 +62,7 @@ use async_trait::async_trait;
 use clwd_bundle::BundleRef;
 use tokio::sync::Mutex;
 
+use budget::Budget;
 use cache::ComponentCache;
 use logs::InstanceLogs;
 
@@ -105,6 +109,9 @@ impl BundleStore for MemoryBundleStore {
 
 struct Instance {
     bundle: BundleRef,
+    /// Resolved once, from the manifest the digest sealed. Kept here so
+    /// `invoke` needs no second decode on the cache-hit path.
+    budget: Budget,
     logs: Arc<InstanceLogs>,
     stopped: bool,
 }
@@ -125,8 +132,11 @@ impl std::fmt::Debug for WasmSandbox {
 
 impl WasmSandbox {
     pub fn new(store: Arc<dyn BundleStore>) -> Result<Self> {
+        let engine = engine::build()?;
+        // Nothing enforces a deadline until something advances the epoch.
+        epoch::spawn(&engine);
         Ok(Self {
-            cache: ComponentCache::new(engine::build()?)?,
+            cache: ComponentCache::new(engine)?,
             store,
             instances: Mutex::new(HashMap::new()),
             next_id: std::sync::atomic::AtomicU64::new(0),
@@ -167,18 +177,20 @@ impl WasmSandbox {
     /// Separating them puts the extraction one edit away from being done
     /// without the validation, or the validation one edit away from being
     /// dropped as redundant.
-    async fn entrypoint(&self, bundle: &BundleRef) -> Result<Vec<u8>> {
+    async fn entrypoint(&self, bundle: &BundleRef) -> Result<(Vec<u8>, Budget)> {
         let bytes = self.store.fetch(bundle).await?;
         let decoded = clwd_bundle::decode(&bytes, Some(*bundle))?;
+        let budget = Budget::from_manifest(&decoded.manifest.capabilities.limits);
         let entrypoint = &decoded.manifest.entrypoint;
-        decoded
+        let data = decoded
             .members
             .into_iter()
             .find(|m| &m.path == entrypoint)
             .map(|m| m.data)
             .ok_or_else(|| Error::Internal {
                 source: format!("entrypoint {entrypoint:?} missing after validation").into(),
-            })
+            })?;
+        Ok((data, budget))
     }
 }
 
@@ -191,7 +203,7 @@ impl Sandbox for WasmSandbox {
         opts: SpawnOptions,
     ) -> Result<Handle> {
         let deadline = opts.deadline;
-        let bytes = self.entrypoint(&bundle).await?;
+        let (bytes, budget) = self.entrypoint(&bundle).await?;
 
         let expired = || Error::DeadlineExceeded {
             phase: Phase::Spawn,
@@ -222,6 +234,7 @@ impl Sandbox for WasmSandbox {
             id.clone(),
             Instance {
                 bundle,
+                budget,
                 logs: Arc::new(InstanceLogs::default()),
                 stopped: false,
             },
@@ -230,13 +243,13 @@ impl Sandbox for WasmSandbox {
     }
 
     async fn invoke(&self, handle: &Handle, req: Request, opts: InvokeOptions) -> Result<Response> {
-        let (bundle, logs) = {
+        let (bundle, budget, logs) = {
             let instances = self.instances.lock().await;
             let instance = instances
                 .get(handle.instance())
                 .filter(|i| !i.stopped)
                 .ok_or(Error::Stopped {})?;
-            (instance.bundle, Arc::clone(&instance.logs))
+            (instance.bundle, instance.budget, Arc::clone(&instance.logs))
         };
 
         // An already-spent budget means do not start, the same as `spawn`.
@@ -257,7 +270,7 @@ impl Sandbox for WasmSandbox {
         let component = match self.cache.get(&bundle).await {
             Some(prepared) => prepared,
             None => {
-                let bytes = self.entrypoint(&bundle).await?;
+                let (bytes, _) = self.entrypoint(&bundle).await?;
                 self.cache.get_or_compile(&bundle, &bytes).await?
             }
         };
@@ -266,6 +279,7 @@ impl Sandbox for WasmSandbox {
             self.cache.engine(),
             &component,
             handle.identity().clone(),
+            budget,
             req,
             opts.request_id.clone(),
             Arc::clone(&logs),

@@ -17,6 +17,11 @@ pub const GUEST: &[u8] = include_bytes!("../fixtures/app.wasm");
 pub const CORE_MODULE: &[u8] = include_bytes!("../fixtures/core-module.wasm");
 
 pub fn bundle_of(entry: &[u8]) -> (BundleRef, Vec<u8>) {
+    bundle_with_limits(entry, 5000, 128)
+}
+
+/// A bundle whose sealed manifest carries the given limits.
+pub fn bundle_with_limits(entry: &[u8], cpu_ms: u64, memory_mb: u64) -> (BundleRef, Vec<u8>) {
     let encoded = build(
         Runtime::Wasm,
         "app.wasm",
@@ -25,10 +30,7 @@ pub fn bundle_of(entry: &[u8]) -> (BundleRef, Vec<u8>) {
             egress: Vec::new(),
             secrets: Vec::new(),
             storage_namespaces: Vec::new(),
-            limits: Limits {
-                cpu_ms: 5000,
-                memory_mb: 128,
-            },
+            limits: Limits { cpu_ms, memory_mb },
         },
         vec![clwd_bundle::File {
             path: "app.wasm".to_owned(),
@@ -38,6 +40,17 @@ pub fn bundle_of(entry: &[u8]) -> (BundleRef, Vec<u8>) {
     )
     .expect("fixture is a valid bundle");
     (encoded.digest, encoded.bytes)
+}
+
+/// A sandbox with the guest already stored, under the given sealed limits.
+pub fn sandbox_with_limits(cpu_ms: u64, memory_mb: u64) -> (WasmSandbox, BundleRef) {
+    let (digest, bytes) = bundle_with_limits(GUEST, cpu_ms, memory_mb);
+    let store = MemoryBundleStore::new();
+    store.insert(&digest, bytes);
+    (
+        WasmSandbox::new(Arc::new(store)).expect("engine builds"),
+        digest,
+    )
 }
 
 /// A sandbox with the guest already stored.
