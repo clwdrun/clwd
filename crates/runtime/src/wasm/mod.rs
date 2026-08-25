@@ -250,8 +250,17 @@ impl Sandbox for WasmSandbox {
             });
         }
 
-        let bytes = self.entrypoint(&bundle).await?;
-        let component = self.cache.get_or_compile(&bundle, &bytes).await?;
+        // The component is almost always resident: `spawn` put it there. Only
+        // resolve bytes on a miss — resolving decodes the bundle, which
+        // re-verifies every member digest, and repeating that per request costs
+        // time proportional to bundle size for an artifact already validated.
+        let component = match self.cache.get(&bundle).await {
+            Some(prepared) => prepared,
+            None => {
+                let bytes = self.entrypoint(&bundle).await?;
+                self.cache.get_or_compile(&bundle, &bytes).await?
+            }
+        };
 
         let call = invoke::run(
             self.cache.engine(),

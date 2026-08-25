@@ -104,6 +104,21 @@ impl ComponentCache {
         self.state.lock().await.entries.len()
     }
 
+    /// The resident component for `bundle`, if there is one.
+    ///
+    /// Lets `invoke` skip resolving bytes entirely on the common path.
+    /// Resolving means decoding the bundle, which re-verifies every member's
+    /// BLAKE3 — work proportional to bundle size, on every request, for an
+    /// artifact that was already validated at spawn.
+    pub(super) async fn get(&self, bundle: &BundleRef) -> Option<Prepared> {
+        let mut state = self.state.lock().await;
+        state.tick += 1;
+        let tick = state.tick;
+        let entry = state.entries.get_mut(&bundle.to_string())?;
+        entry.used = tick;
+        Some(entry.prepared.clone())
+    }
+
     pub(super) fn compilations(&self) -> u64 {
         self.compilations.load(std::sync::atomic::Ordering::Relaxed)
     }
