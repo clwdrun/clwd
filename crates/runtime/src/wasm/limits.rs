@@ -40,10 +40,19 @@ use super::budget::Budget;
 ///
 /// A second allocation channel that the memory cap does not see: `table.grow`
 /// allocates host-side storage for references without touching linear memory.
+///
+/// Measured rather than guessed: the reference component built from
+/// `wit/world.wit` peaks at **76** table elements serving a request. This is
+/// three orders of magnitude above that, which is headroom for a component
+/// doing real work rather than a cap anyone is expected to approach.
 const MAX_TABLE_ELEMENTS: usize = 100_000;
 
 /// Instances one `Store` may hold. A component instantiates its inner
 /// instances at startup, so this bounds a component that nests without limit.
+///
+/// Unlike the table cap this one is **not** measured against a real component —
+/// the reference fixture never approaches it, so there is no high-water mark to
+/// report. Treat the number as a sanity bound, not as a tuned one.
 const MAX_INSTANCES: usize = 64;
 
 /// Table and memory *counts*.
@@ -82,7 +91,8 @@ impl std::error::Error for LimitExceeded {}
 pub(super) struct BudgetLimiter {
     memory_bytes: usize,
     /// High-water marks, so the fixed caps above can be set from what real
-    /// components need rather than from intuition.
+    /// components need rather than from intuition. The reference component
+    /// peaks at 1,114,112 bytes of linear memory and 76 table elements.
     pub(super) peak_memory: usize,
     pub(super) peak_table_elements: usize,
 }

@@ -5,6 +5,7 @@
 //! dropped.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use http_body_util::BodyExt;
 use wasmtime::{Engine, Store, UpdateDeadline};
@@ -143,6 +144,16 @@ pub(super) async fn run(
 
 /// Turn a failure out of wasm into the right error.
 ///
+/// # On `Phase::Spawn`
+///
+/// Both phases are mapped, but an epoch interrupt during instantiation is not
+/// reachable with an ordinary component: instantiation runs no guest loops and
+/// completes in tens of microseconds, far inside any budget the manifest can
+/// express. Cold start is bounded by the caller's wall-clock deadline instead,
+/// which `spawn` enforces. The phase is threaded through anyway so a component
+/// with an expensive start is classified correctly rather than surprisingly.
+///
+///
 /// Three outcomes that must not be conflated, because they call for different
 /// responses: the guest asked for more than it was given, the guest ran longer
 /// than it was given, or the guest is broken.
@@ -175,5 +186,71 @@ fn classify(error: wasmtime::Error, phase: Phase, budget: &Budget, during: &str)
     // diagnostic an app author gets.
     Error::Trap {
         message: format!("{during}: {error:?}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn budget() -> Budget {
+        Budget {
+            cpu_ticks: 50,
+            cpu: Duration::from_millis(50),
+            memory_bytes: 4 * 1024 * 1024,
+        }
+    }
+
+    /// A limiter denial arrives as a trap carrying the typed error, so it must
+    /// be recognised before the fallback claims it.
+    #[test]
+    fn a_limiter_denial_maps_to_resource_exhausted() {
+        let error = wasmtime::Error::from(LimitExceeded {
+            limit: "memory",
+            requested: 8,
+            allowed: 4,
+        });
+        let mapped = classify(error, Phase::Invoke, &budget(), "guest");
+        assert_eq!(mapped.code(), "runtime.resource_exhausted");
+    }
+
+    /// `UpdateDeadline::Interrupt` raises `Trap::Interrupt`. Both phases map,
+    /// though only the invoke phase is reachable in practice — see the note on
+    /// `classify`.
+    #[test]
+    fn an_epoch_interrupt_maps_to_deadline_exceeded_in_either_phase() {
+        for phase in [Phase::Spawn, Phase::Invoke] {
+            let mapped = classify(
+                wasmtime::Trap::Interrupt.into(),
+                phase,
+                &budget(),
+                "instantiating",
+            );
+            assert_eq!(mapped.code(), "runtime.deadline_exceeded");
+            assert!(
+                matches!(mapped, Error::DeadlineExceeded { phase: p, .. } if p == phase),
+                "the phase must survive the mapping"
+            );
+        }
+    }
+
+    /// The fallback must not over-claim. Another trap kind is the guest's own
+    /// fault and keeps its message.
+    #[test]
+    fn any_other_trap_stays_a_trap() {
+        let mapped = classify(
+            wasmtime::Trap::UnreachableCodeReached.into(),
+            Phase::Invoke,
+            &budget(),
+            "guest",
+        );
+        assert_eq!(mapped.code(), "runtime.trap");
+        // The guest's own message survives: it is the only diagnostic an app
+        // author gets. `Display` renders the trap in prose, not as the Rust
+        // variant name.
+        assert!(
+            mapped.to_string().contains("unreachable"),
+            "the trap message must survive the mapping: {mapped}"
+        );
     }
 }

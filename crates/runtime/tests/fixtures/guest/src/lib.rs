@@ -60,6 +60,28 @@ impl Guest for Component {
             // A trap, so the host's trap mapping has something to map.
             "/trap" => panic!("guest panicked on purpose"),
 
+            // Never returns and never yields. Only preemption stops it.
+            "/spin" => {
+                let mut n: u64 = 0;
+                loop {
+                    n = n.wrapping_add(1);
+                    std::hint::black_box(n);
+                }
+            }
+
+            // Allocates until the host refuses, in 1 MiB steps. Held in a Vec
+            // so the allocator cannot reuse the same pages.
+            "/alloc" => {
+                let mut held: Vec<Vec<u8>> = Vec::new();
+                loop {
+                    let mut chunk = vec![0u8; 1024 * 1024];
+                    // Touch it: an untouched allocation may never grow memory.
+                    chunk[0] = held.len() as u8;
+                    std::hint::black_box(&chunk);
+                    held.push(chunk);
+                }
+            }
+
             _ => "ok".into(),
         };
 
