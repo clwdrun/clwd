@@ -518,12 +518,30 @@ egress_bandwidth_mbps = 100  # -> bundle.capability_unknown_key
 ```
 
 `capabilities.version` is checked before any other key in the subtree; a value
-other than `1` is `bundle.capabilities_version_unsupported`. Its role is
-narrower than it would be under a lenient rule — it no longer gates whether
-unknown keys are rejected, since 7.1 rejects them everywhere. It remains so the
-capability vocabulary can be versioned on its own cadence: a runtime can refuse
-a capability set it is too old to enforce, and say so by version, without
-`schema_version` having to move every time a permission is added.
+other than `1` is `bundle.capabilities_version_unsupported`.
+
+Its role is narrower than it would be under a lenient rule: it no longer gates
+whether unknown keys are rejected, because 7.1 rejects them everywhere. What it
+still does is versioned independently of `schema_version`, so the capability
+vocabulary can grow without moving the schema for the rest of the manifest.
+
+Its contract, stated so a reader need not infer it:
+
+- **Bumping `capabilities.version` signals that new vocabulary exists. It never
+  changes the meaning of an existing key.** A key defined at version 1 means at
+  version 2 exactly what it meant at version 1. A permission whose meaning must
+  change gets a new name, not a new version.
+- **A decoder MUST reject a `capabilities.version` it does not implement**, with
+  `bundle.capabilities_version_unsupported`. It does not accept the block and
+  interpret the subset it recognizes.
+
+The two clauses look like they are in tension and are not. Meaning-stability is
+what lets a reader reason about a capability across versions. Rejection is still
+required because a higher version may carry *grants* this decoder has never
+heard of: interpreting the known subset conservatively would mean running an
+application whose permission set is only partly understood, which is the silent
+permission this whole section exists to prevent. Stability governs what a key
+means; rejection governs what to do about the keys you cannot see.
 
 The outcome is the same rejection; the distinct code carries a materially
 different remediation. `bundle.unknown_key` says a producer emitted a field this
@@ -544,27 +562,33 @@ happened to reach first.
 The lenient alternative — ignore unknown keys in sub-tables, reject them only
 under `[capabilities]` — buys one thing: a v1 host can run a v2 bundle that
 added a field, without a version bump. This format gives that up, for three
-reasons.
+reasons, of which the first is the general case and the other two are instances
+of it.
 
-**The manifest is identity-bearing.** Its bytes are inside the bundle digest, so
-a v2 bundle with an extra field is already a different bundle with a different
-digest. "Ignorable" overstates what leniency achieves: it does not make the two
-artifacts the same, it only makes the older host willing to run the newer one.
+**The lenient rule requires correctly predicting which future field is
+dangerous. The strict rule does not have to be right about that.**
+`[capabilities]` is special-cased under leniency because it is *known now* to
+carry permissions. Nothing says `[app]` will not later carry `env`, `run_as` or
+`mount` — and on the day it does, every already-deployed v1 host silently
+ignores it and runs the application anyway. Getting that right requires
+foreseeing, at v1, every table that will ever become security-bearing. A rule
+whose safety depends on a prediction about future schema design is not a safety
+rule. Rejecting everything unknown needs no such foresight, and it fails closed
+in the case leniency fails open.
 
 **Ignoring keys and verifying canonical form are mutually exclusive**, and
 canonical form is worth more. A decoder that ignores a key cannot re-emit the
-manifest it was handed, so it cannot check that the manifest is in canonical
-form, so two producers can emit byte-different manifests for identical content
-and mint two digests for one artifact. §5.4 explains what that costs. Rejecting
-unknown keys buys back the guarantee that one logical manifest has exactly one
-byte representation.
+manifest it was handed, so it cannot check the manifest is canonical, so two
+producers can emit byte-different manifests for identical content and mint two
+digests for one artifact. §5.4 explains what that costs. Rejecting unknown keys
+buys back the guarantee that one logical manifest has exactly one byte
+representation.
 
-**Today's non-security-bearing table is tomorrow's security-bearing one.**
-`[capabilities]` is special-cased under the lenient rule because it is *known
-now* to carry permissions. Nothing says `[app]` will not later carry `env`,
-`run_as` or `mount` — and on the day it does, every deployed v1 host silently
-ignores it. The lenient rule requires predicting which future field is dangerous.
-The strict rule does not have to be right about that.
+**The manifest is identity-bearing**, so leniency buys less than it appears to.
+Its bytes are inside the bundle digest, so a v2 bundle with an extra field is
+already a different bundle with a different digest. "Ignorable" overstates the
+result: it does not make the two artifacts the same, it only makes an older host
+willing to run the newer one.
 
 What is given up is real: a mixed-version fleet cannot roll a manifest change
 forward without every host understanding it. For an identity-bearing document
