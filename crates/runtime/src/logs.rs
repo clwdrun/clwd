@@ -22,11 +22,20 @@ pub enum LogLevel {
     Error,
 }
 
+/// Which of a guest's output streams a line came from.
+///
+/// Separate from [`LogLevel`] on purpose: a guest writing to stderr is not
+/// necessarily reporting an error, and folding the two together would make
+/// every debug print look like a failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogStreamKind {
+    Stdout,
+    Stderr,
+}
+
 /// One line of output from a running instance.
 ///
-/// `#[non_exhaustive]`: this grows. A stdout/stderr discriminator is the next
-/// obvious field and belongs with the backend that can actually distinguish
-/// them; #41 will want more correlation fields still.
+/// `#[non_exhaustive]`: this grows. #41 will want more correlation fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct LogLine {
@@ -41,6 +50,13 @@ pub struct LogLine {
     /// `None` for instance-level lines — startup, teardown — which genuinely
     /// have no request. A sentinel value here would make correlation lie.
     pub request_id: Option<RequestId>,
+    /// Which guest stream produced this line.
+    ///
+    /// **`None` means the backend does not distinguish the two**, not that the
+    /// line came from neither. The wasm backend reads stdout and stderr
+    /// separately and always sets this; a backend that cannot tell them apart
+    /// reports `None` rather than guessing.
+    pub stream: Option<LogStreamKind>,
 }
 
 impl LogLine {
@@ -60,6 +76,7 @@ impl LogLine {
             level,
             message: message.into(),
             request_id: None,
+            stream: None,
         }
     }
 }
