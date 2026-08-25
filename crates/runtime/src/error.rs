@@ -111,6 +111,18 @@ define_error! {
         #[error("the instance is no longer running")]
         Stopped {} => "runtime.stopped";
 
+        /// The guest asked for more of a resource than its manifest sealed.
+        ///
+        /// Distinct from [`Error::Trap`] on purpose: a guest that exceeded its
+        /// budget and a guest with a bug are different failures, and an
+        /// operator reading a log needs to tell them apart.
+        #[error("guest exceeded its {limit} budget: requested {requested}, limit {allowed}")]
+        ResourceExhausted {
+            limit: &'static str,
+            requested: u64,
+            allowed: u64,
+        } => "runtime.resource_exhausted";
+
         /// The guest trapped: an unreachable, a failed assertion, a panic in
         /// guest code, or an epoch/fuel interruption.
         ///
@@ -175,6 +187,11 @@ mod tests {
             Error::Stopped {},
             Error::Trap {
                 message: "unreachable".into(),
+            },
+            Error::ResourceExhausted {
+                limit: "memory",
+                requested: 2,
+                allowed: 1,
             },
             Error::Internal {
                 source: "boom".into(),

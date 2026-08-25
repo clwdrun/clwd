@@ -16,6 +16,8 @@ use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpHooks, WasiHttpVi
 
 use crate::identity::{Caller, IdentityCtx, Role};
 use crate::logs::LogStreamKind;
+use crate::wasm::budget::Budget;
+use crate::wasm::limits::BudgetLimiter;
 use crate::wasm::logs::LogSink;
 
 wasmtime::component::bindgen!({
@@ -39,6 +41,10 @@ pub(super) struct StoreState {
     /// The one caller this `Store` serves. Read-only: there is no setter, and
     /// the value arrives by move at construction.
     identity: IdentityCtx,
+    /// Resource caps. Lives here because `Store::limiter` resolves the limiter
+    /// out of the store's data — wasmtime gives no other place to put it. It is
+    /// per-`Store` like everything else in this struct.
+    pub(super) limiter: BudgetLimiter,
 }
 
 #[derive(Default)]
@@ -46,7 +52,12 @@ pub(super) struct DefaultHooks;
 impl WasiHttpHooks for DefaultHooks {}
 
 impl StoreState {
-    pub(super) fn new(identity: IdentityCtx, stdout: LogSink, stderr: LogSink) -> Self {
+    pub(super) fn new(
+        identity: IdentityCtx,
+        budget: &Budget,
+        stdout: LogSink,
+        stderr: LogSink,
+    ) -> Self {
         let wasi = WasiCtxBuilder::new().stdout(stdout).stderr(stderr).build();
         Self {
             wasi,
@@ -54,6 +65,7 @@ impl StoreState {
             hooks: DefaultHooks,
             table: ResourceTable::new(),
             identity,
+            limiter: BudgetLimiter::new(budget),
         }
     }
 }
