@@ -43,3 +43,11 @@ rtnetlink = { workspace = true, optional = true }
 seccompiler = { workspace = true, optional = true }
 landlock = { workspace = true, optional = true }
 nix = { workspace = true, optional = true }
+
+[dev-dependencies]
+trybuild = "1"
+
+# The compile-fail cases below need the scripted backend, and a feature cannot
+# be enabled for dev-dependencies alone — so the crate depends on itself with
+# `test-util` on, which applies to test targets only.
+clwd-runtime = { path = ".", features = ["test-util"] }

@@ -15,7 +15,9 @@ pub mod test_util;
 pub use call::{Body, Deadline, InvokeOptions, Request, RequestId, Response, SpawnOptions};
 pub use error::{Error, Phase, Result};
 pub use handle::{Handle, InstanceId};
-pub use identity::{Caller, GroupId, IdentityCtx, OrgId, Principal, Role, ServicePrincipal, SubjectId};
+pub use identity::{
+    Caller, GroupId, IdentityCtx, OrgId, Principal, Role, ServicePrincipal, SubjectId,
+};
 pub use logs::{LogLevel, LogLine, LogStream};
 
 /// `BundleRef` is defined by `clwd-bundle` and re-exported, never redefined.
@@ -95,12 +97,7 @@ pub trait Sandbox: Send + Sync {
     /// Handle one request on an already-running instance.
     ///
     /// Takes no identity: see the caller-isolation invariant above.
-    async fn invoke(
-        &self,
-        handle: &Handle,
-        req: Request,
-        opts: InvokeOptions,
-    ) -> Result<Response>;
+    async fn invoke(&self, handle: &Handle, req: Request, opts: InvokeOptions) -> Result<Response>;
 
     /// Log lines from this instance, including lines with no request of their
     /// own. The stream stays open until the instance stops.

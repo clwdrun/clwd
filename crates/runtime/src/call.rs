@@ -105,6 +105,22 @@ impl Deadline {
 /// let mut opts = SpawnOptions::default();
 /// opts.deadline = Some(Deadline::after(Duration::from_secs(5)));
 /// ```
+/// A struct literal is rejected outside this crate, which is the whole point of
+/// the marker. `#[non_exhaustive]` has no effect *within* the defining crate, so
+/// this is checked from a doctest — which rustdoc compiles as its own crate:
+///
+/// ```compile_fail
+/// # use clwd_runtime::call::SpawnOptions;
+/// let opts = SpawnOptions { deadline: None };
+/// ```
+///
+/// Functional update syntax is rejected too, which is why the pattern above is
+/// assignment rather than `..Default::default()`:
+///
+/// ```compile_fail
+/// # use clwd_runtime::call::SpawnOptions;
+/// let opts = SpawnOptions { deadline: None, ..Default::default() };
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SpawnOptions {

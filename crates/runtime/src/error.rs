@@ -22,6 +22,18 @@ use clwd_bundle::BundleRef;
 
 /// Declares `Error`, its `code()`, and the list of codes this crate owns.
 ///
+/// # Attributes are emitted here, not forwarded
+///
+/// `#[error(transparent)]` is written by this macro rather than accepted from
+/// the invocation. That is not a style choice. An attribute passed through a
+/// `$(#[$a:meta])*` fragment carries the macro's hygiene context, so thiserror
+/// resolves `transparent` as an identifier in *this* scope and fails with
+/// `cannot find value `transparent``. The same will happen to the next
+/// attribute someone tries to forward the same way.
+///
+/// It is also the better contract: a delegating variant is transparent by
+/// construction, so making it an input offers a choice with one correct answer.
+///
 /// Two sections, because the two kinds of variant differ in where their code
 /// comes from — `delegating` variants borrow a nested error's catalogue, and
 /// `owned` variants carry a `runtime.*` literal. Splitting them structurally

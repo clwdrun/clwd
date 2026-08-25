@@ -1,0 +1,11 @@
+error[E0382]: borrow of moved value: `handle`
+  --> tests/ui/use_after_stop.rs:24:13
+   |
+11 |     let handle = sandbox
+   |         ------ move occurs because `handle` has type `clwd_runtime::Handle`, which does not implement the `Copy` trait
+...
+20 |     sandbox.stop(handle).await.unwrap();
+   |                  ------ value moved here
+...
+24 |             &handle,
+   |             ^^^^^^^ value borrowed here after move
