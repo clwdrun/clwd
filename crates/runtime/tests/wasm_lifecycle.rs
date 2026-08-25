@@ -9,7 +9,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clwd_runtime::wasm::{MemoryBundleStore, WasmSandbox};
-use clwd_runtime::{Deadline, Error, InvokeOptions, LogStreamKind, Phase, RequestId, Sandbox, SpawnOptions};
+use clwd_runtime::{
+    Deadline, Error, InvokeOptions, LogStreamKind, Phase, RequestId, Sandbox, SpawnOptions,
+};
 use futures_core::Stream;
 
 #[tokio::test]
@@ -79,7 +81,13 @@ async fn a_spawn_deadline_reports_the_spawn_phase() {
 
     assert_eq!(error.code(), "runtime.deadline_exceeded");
     assert!(
-        matches!(error, Error::DeadlineExceeded { phase: Phase::Spawn, .. }),
+        matches!(
+            error,
+            Error::DeadlineExceeded {
+                phase: Phase::Spawn,
+                ..
+            }
+        ),
         "got {error:?}"
     );
 }
@@ -102,7 +110,13 @@ async fn an_invoke_deadline_reports_the_invoke_phase() {
 
     assert_eq!(error.code(), "runtime.deadline_exceeded");
     assert!(
-        matches!(error, Error::DeadlineExceeded { phase: Phase::Invoke, .. }),
+        matches!(
+            error,
+            Error::DeadlineExceeded {
+                phase: Phase::Invoke,
+                ..
+            }
+        ),
         "got {error:?}"
     );
 }
@@ -203,10 +217,12 @@ async fn logs_carry_the_request_id_and_the_stream_they_came_from() {
             "every line from an invocation carries its request id"
         );
     }
-    assert!(lines.iter().any(|l| l.stream == Some(LogStreamKind::Stdout)
-        && l.message.contains("stdout")));
-    assert!(lines.iter().any(|l| l.stream == Some(LogStreamKind::Stderr)
-        && l.message.contains("stderr")));
+    assert!(lines
+        .iter()
+        .any(|l| l.stream == Some(LogStreamKind::Stdout) && l.message.contains("stdout")));
+    assert!(lines
+        .iter()
+        .any(|l| l.stream == Some(LogStreamKind::Stderr) && l.message.contains("stderr")));
 }
 
 #[tokio::test]

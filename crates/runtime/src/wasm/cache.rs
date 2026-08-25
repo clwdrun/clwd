@@ -160,9 +160,11 @@ impl ComponentCache {
                             source: format!("compiling component: {e}").into(),
                         })?;
                 let size = component.serialize().map(|b| b.len()).unwrap_or(0);
-                let pre = linker.instantiate_pre(&component).map_err(|e| Error::Internal {
-                    source: format!("pre-instantiating: {e}").into(),
-                })?;
+                let pre = linker
+                    .instantiate_pre(&component)
+                    .map_err(|e| Error::Internal {
+                        source: format!("pre-instantiating: {e}").into(),
+                    })?;
                 let prepared = ProxyPre::new(pre).map_err(|e| Error::Internal {
                     source: format!("component does not export wasi:http/proxy: {e}").into(),
                 })?;
@@ -186,7 +188,14 @@ impl ComponentCache {
             return;
         }
         state.bytes += size;
-        state.entries.insert(key, Entry { prepared, size, used });
+        state.entries.insert(
+            key,
+            Entry {
+                prepared,
+                size,
+                used,
+            },
+        );
 
         // Evict least-recently-used until under budget. Linear, because the
         // resident set is dozens of entries and a linked list would be more

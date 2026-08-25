@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: fmt-check clippy test lib-silent lib-bare spec-intact bundle-deps trait-deps deny
+check: fmt-check clippy test test-wasm lib-silent lib-bare spec-intact bundle-deps trait-deps wasm-contained deny
 
 fmt:
     cargo fmt --all
@@ -23,6 +23,12 @@ clippy:
 
 test:
     cargo test --workspace
+
+# The default build never compiles the wasm backend, so `cargo test --workspace`
+# does not exercise it. A gate that does not compile the code it gates is worse
+# than no gate.
+test-wasm:
+    cargo test -p clwd-runtime --features wasm
 
 deny:
     cargo deny check --hide-inclusion-graph
@@ -79,6 +85,21 @@ trait-deps:
       exit 1
     fi
     echo "ok: no backend crate in the trait surface"
+
+# No wasmtime type may appear outside the wasm module, even when the feature is
+# on. The trait is what the control plane sees; a wasmtime type in a signature
+# elsewhere leaks the backend through it.
+wasm-contained:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    escaped=$(grep -rn --include='*.rs' -E '\bwasmtime[_a-z]*::' crates/runtime/src \
+              | grep -v '^crates/runtime/src/wasm/' || true)
+    if [ -n "$escaped" ]; then
+      echo "error: a wasmtime type escaped the wasm module"
+      echo "$escaped"
+      exit 1
+    fi
+    echo "ok: wasmtime types confined to the wasm module"
 
 # ==========================================
 # 2. BUILDS

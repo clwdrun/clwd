@@ -49,15 +49,15 @@ mod logs;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use clwd_bundle::BundleRef;
-use tokio::sync::Mutex;
 use crate::call::{InvokeOptions, Request, Response, SpawnOptions};
 use crate::error::{Error, Phase, Result};
 use crate::handle::{Handle, InstanceId};
 use crate::identity::IdentityCtx;
 use crate::logs::LogStream;
 use crate::Sandbox;
+use async_trait::async_trait;
+use clwd_bundle::BundleRef;
+use tokio::sync::Mutex;
 
 use cache::ComponentCache;
 use logs::InstanceLogs;
@@ -229,12 +229,7 @@ impl Sandbox for WasmSandbox {
         Ok(Handle::new(ctx, id))
     }
 
-    async fn invoke(
-        &self,
-        handle: &Handle,
-        req: Request,
-        opts: InvokeOptions,
-    ) -> Result<Response> {
+    async fn invoke(&self, handle: &Handle, req: Request, opts: InvokeOptions) -> Result<Response> {
         let (bundle, logs) = {
             let instances = self.instances.lock().await;
             let instance = instances
@@ -294,4 +289,3 @@ impl Sandbox for WasmSandbox {
         Ok(())
     }
 }
-

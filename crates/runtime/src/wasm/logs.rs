@@ -106,7 +106,8 @@ impl StdoutStream for LogSink {
 impl OutputStream for LogSink {
     fn write(&mut self, bytes: Bytes) -> Result<(), StreamError> {
         let mut buffer = self.buffer.lock().expect("not poisoned");
-        let used: usize = buffer.partial.len() + buffer.lines.iter().map(String::len).sum::<usize>();
+        let used: usize =
+            buffer.partial.len() + buffer.lines.iter().map(String::len).sum::<usize>();
         if used + bytes.len() > SINK_CAPACITY {
             // Drop rather than trap. See the module comment.
             buffer.dropped += bytes.len() as u64;

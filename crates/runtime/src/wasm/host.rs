@@ -15,8 +15,8 @@ use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpHooks, WasiHttpView};
 
 use crate::identity::{Caller, IdentityCtx, Role};
-use crate::wasm::logs::LogSink;
 use crate::logs::LogStreamKind;
+use crate::wasm::logs::LogSink;
 
 wasmtime::component::bindgen!({
     inline: "

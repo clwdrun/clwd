@@ -138,7 +138,11 @@ async fn role_and_groups_come_from_the_spawning_identity() {
         .invoke(&plain, get("/role"), InvokeOptions::default())
         .await
         .expect("invokes");
-    assert_eq!(text(&none), "none", "bob has no role and must not see alice's");
+    assert_eq!(
+        text(&none),
+        "none",
+        "bob has no role and must not see alice's"
+    );
 }
 
 /// Anonymous is reachable and must arrive as itself, not as an empty user.
