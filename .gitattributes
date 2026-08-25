@@ -1,0 +1,8 @@
+# Byte-normative material. Nothing may normalize line endings, trim
+# whitespace, or reflow these — a canonicalization fixture that has been
+# "tidied" fails as a digest mismatch with no obvious cause.
+docs/spec/fixtures/** -text -diff
+
+# The specification itself defines bytes, including whitespace inside code
+# spans. Keep line endings out of it.
+docs/spec/*.md -text

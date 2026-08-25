@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: fmt-check clippy test lib-silent lib-bare deny
+check: fmt-check clippy test lib-silent lib-bare spec-intact deny
 
 fmt:
     cargo fmt --all
@@ -44,6 +44,16 @@ lib-silent:
 # Terminal-drawing deps are a feature. This asserts the library does not need them.
 lib-bare:
     cargo build -p clwd-cli --lib --no-default-features
+
+# docs/spec defines bytes, including whitespace inside code spans, and the
+# fixtures are the conformance vector. Catch a formatter reflowing either here
+# rather than as an unexplained digest mismatch later.
+spec-intact:
+    cd docs/spec && sha256sum -c SHA256SUMS
+
+# Re-record the hashes after a deliberate spec or fixture change.
+spec-reseal:
+    cd docs/spec && sha256sum bundle-v1.md $(ls fixtures/* 2>/dev/null) > SHA256SUMS
 
 # ==========================================
 # 2. BUILDS

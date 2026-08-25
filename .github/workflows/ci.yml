@@ -71,6 +71,14 @@ jobs:
       - name: library builds without terminal dependencies
         run: cargo build -p clwd-cli --lib --no-default-features
 
+      # docs/spec defines bytes, down to whitespace inside code spans, and
+      # docs/spec/fixtures are the conformance vector itself. A formatter that
+      # reflows either surfaces later as a digest mismatch with no obvious
+      # cause, so drift is caught here instead. A deliberate spec change
+      # updates SHA256SUMS in the same commit.
+      - name: spec and fixtures have not drifted
+        run: cd docs/spec && sha256sum -c SHA256SUMS
+
       - name: install cargo-deny
         run: cargo install cargo-deny --locked --version ^0.20
 
