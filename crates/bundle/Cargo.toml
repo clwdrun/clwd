@@ -1,0 +1,17 @@
+[package]
+name = "clwd-bundle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The clwd bundle format: canonical tar, digests, manifest"
+
+# No async, no wasmtime, no I/O of its own. The platform builder depends on
+# this across the repository seam and must not acquire a runtime to read a
+# manifest. See docs/spec/bundle-v1.md.
+[dependencies]
+blake3 = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+unicode-normalization = { workspace = true }

@@ -1,0 +1,16 @@
+//! The clwd bundle format, version 1.
+//!
+//! `docs/spec/bundle-v1.md` is authoritative. Where this crate and that
+//! document disagree, the document is right and this crate has a bug.
+//!
+//! No async, no wasmtime, no I/O of its own: the caller supplies bytes and
+//! receives bytes. The platform builder depends on this across the repository
+//! seam and must not acquire a runtime in order to read a manifest.
+
+pub mod digest;
+pub mod error;
+
+pub use digest::{BundleRef, Digest};
+pub use error::Error;
+
+pub type Result<T> = std::result::Result<T, Error>;
