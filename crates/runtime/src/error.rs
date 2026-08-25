@@ -111,6 +111,15 @@ define_error! {
         #[error("the instance is no longer running")]
         Stopped {} => "runtime.stopped";
 
+        /// The guest trapped: an unreachable, a failed assertion, a panic in
+        /// guest code, or an epoch/fuel interruption.
+        ///
+        /// The message is preserved verbatim because it is the only diagnostic
+        /// an app author gets — summarizing it here would discard the one thing
+        /// that makes the failure actionable.
+        #[error("guest trapped: {message}")]
+        Trap { message: String } => "runtime.trap";
+
         /// Last resort only, never where a specific variant fits. A boxed
         /// opaque source in a library error type is tolerable as a genuine
         /// fallback and corrosive as a default.
@@ -164,6 +173,9 @@ mod tests {
                 limit: Duration::from_secs(1),
             },
             Error::Stopped {},
+            Error::Trap {
+                message: "unreachable".into(),
+            },
             Error::Internal {
                 source: "boom".into(),
             },

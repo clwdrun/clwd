@@ -1,0 +1,16 @@
+[package]
+name = "clwd-test-guest"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = "0.60"
+
+[profile.release]
+opt-level = "z"
+strip = true
+lto = true

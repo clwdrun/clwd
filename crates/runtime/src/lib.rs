@@ -18,7 +18,7 @@ pub use handle::{Handle, InstanceId};
 pub use identity::{
     Caller, GroupId, IdentityCtx, OrgId, Principal, Role, ServicePrincipal, SubjectId,
 };
-pub use logs::{LogLevel, LogLine, LogStream};
+pub use logs::{LogLevel, LogLine, LogStream, LogStreamKind};
 
 /// `BundleRef` is defined by `clwd-bundle` and re-exported, never redefined.
 /// One digest type, one parser, one spelling.

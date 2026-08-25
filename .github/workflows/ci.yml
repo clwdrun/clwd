@@ -82,6 +82,17 @@ jobs:
       # The control plane holds one `dyn Sandbox` and never branches on the
       # backend. That only holds if no backend type reaches the trait, so with
       # no features on, no backend crate may appear in the tree.
+      - name: wasmtime types stay inside the wasm module
+        run: |
+          escaped=$(grep -rn --include='*.rs' -E '\bwasmtime[_a-z]*::' crates/runtime/src \
+                    | grep -v '^crates/runtime/src/wasm/' || true)
+          if [ -n "$escaped" ]; then
+            echo "::error::a wasmtime type escaped the wasm module"
+            echo "$escaped"
+            exit 1
+          fi
+          echo "ok: wasmtime types confined to the wasm module"
+
       - name: no backend type reaches the Sandbox trait surface
         run: |
           if cargo tree -p clwd-runtime -e normal \
@@ -158,6 +169,12 @@ jobs:
           key: ${{ runner.os }}-backend-${{ matrix.feature }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
       # microvm needs Linux with KVM at runtime; compiling it does not.
       - run: cargo build -p clwd-runtime --features ${{ matrix.feature }}
+
+      # The wasm backend has tests; the default build never compiles them, so
+      # `cargo test --workspace` in the gate job does not reach them.
+      - name: test the wasm backend
+        if: matrix.feature == 'wasm'
+        run: cargo test -p clwd-runtime --features wasm
 
   guest:
     runs-on: ubuntu-latest
