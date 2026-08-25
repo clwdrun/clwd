@@ -5,7 +5,6 @@
 //! dropped.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use http_body_util::BodyExt;
 use wasmtime::{Engine, Store, UpdateDeadline};
@@ -175,7 +174,10 @@ fn classify(error: wasmtime::Error, phase: Phase, budget: &Budget, during: &str)
 
     // `UpdateDeadline::Interrupt` raises exactly this. Distinguishing "ran too
     // long" from "the guest panicked" is why both codes exist.
-    if matches!(error.downcast_ref::<wasmtime::Trap>(), Some(wasmtime::Trap::Interrupt)) {
+    if matches!(
+        error.downcast_ref::<wasmtime::Trap>(),
+        Some(wasmtime::Trap::Interrupt)
+    ) {
         return Error::DeadlineExceeded {
             phase,
             limit: budget.cpu,
@@ -192,6 +194,7 @@ fn classify(error: wasmtime::Error, phase: Phase, budget: &Budget, during: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     fn budget() -> Budget {
         Budget {

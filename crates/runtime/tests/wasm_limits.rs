@@ -33,7 +33,13 @@ async fn a_spinning_guest_is_preempted_within_its_budget() {
 
     assert_eq!(error.code(), "runtime.deadline_exceeded");
     assert!(
-        matches!(error, Error::DeadlineExceeded { phase: Phase::Invoke, .. }),
+        matches!(
+            error,
+            Error::DeadlineExceeded {
+                phase: Phase::Invoke,
+                ..
+            }
+        ),
         "got {error:?}"
     );
     // Generous: the point is that it terminated at all, not that scheduling is

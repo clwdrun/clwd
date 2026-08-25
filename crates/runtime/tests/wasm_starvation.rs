@@ -53,7 +53,11 @@ fn spinning_guests_cannot_starve_the_epoch_ticker() {
                 let sandbox = Arc::clone(&sandbox);
                 tasks.push(tokio::spawn(async move {
                     let handle = sandbox
-                        .spawn(digest, user(&format!("spinner-{i}")), SpawnOptions::default())
+                        .spawn(
+                            digest,
+                            user(&format!("spinner-{i}")),
+                            SpawnOptions::default(),
+                        )
                         .await
                         .expect("spawns");
                     sandbox
@@ -73,13 +77,11 @@ fn spinning_guests_cannot_starve_the_epoch_ticker() {
         });
     });
 
-    let codes = rx
-        .recv_timeout(Duration::from_secs(60))
-        .expect(
-            "no guest was preempted within 60s: the epoch stopped advancing while every worker \
+    let codes = rx.recv_timeout(Duration::from_secs(60)).expect(
+        "no guest was preempted within 60s: the epoch stopped advancing while every worker \
              was in wasm, which is what happens when the ticker shares the executor with the \
              guests it is meant to interrupt",
-        );
+    );
 
     assert_eq!(codes.len(), SPINNERS);
     for code in &codes {
