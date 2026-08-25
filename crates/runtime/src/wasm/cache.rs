@@ -58,6 +58,9 @@ pub(super) struct ComponentCache {
     linker: Linker<StoreState>,
     budget: usize,
     state: Mutex<State>,
+    /// Counts actual compilations, so a test can tell single-flight working
+    /// from two threads compiling the same bundle and discarding one result.
+    compilations: std::sync::atomic::AtomicU64,
 }
 
 #[derive(Default)]
@@ -87,6 +90,7 @@ impl ComponentCache {
             linker,
             budget: DEFAULT_BUDGET_BYTES,
             state: Mutex::new(State::default()),
+            compilations: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -98,6 +102,10 @@ impl ComponentCache {
     /// timing, which would be a proxy for the thing they mean.
     pub(super) async fn len(&self) -> usize {
         self.state.lock().await.entries.len()
+    }
+
+    pub(super) fn compilations(&self) -> u64 {
+        self.compilations.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Fetch the compiled component for `bundle`, compiling `bytes` if it is
@@ -133,10 +141,12 @@ impl ComponentCache {
         let engine = self.engine.clone();
         let owned = bytes.to_vec();
         let linker = self.linker.clone();
+        let counter = &self.compilations;
         let prepared = cell
             .get_or_try_init(|| async move {
                 // Compilation is CPU-bound and takes ~90ms. On the async
                 // executor that would stall every other task on the thread.
+                counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let component =
                     tokio::task::spawn_blocking(move || Component::new(&engine, &owned))
                         .await

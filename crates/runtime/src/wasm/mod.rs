@@ -139,12 +139,34 @@ impl WasmSandbox {
         self.cache.len().await
     }
 
+    /// How many times a component has actually been compiled.
+    ///
+    /// Distinct from [`Self::cached_components`]: the resident count reaches
+    /// one whether the single-flight path worked or two threads compiled the
+    /// same bundle and one result was discarded. Only this number can tell
+    /// those apart, which is why the concurrency test asserts on it.
+    pub fn compilations(&self) -> u64 {
+        self.cache.compilations()
+    }
+
     /// Resolve a digest to the bytes of the component to run.
     ///
-    /// A bundle is a tar archive, not a component: what wasmtime compiles is
-    /// the member `app.entrypoint` names. Decoding also validates, so a core
-    /// module is rejected here — `clwd-bundle`'s ingest gate — before wasmtime
-    /// gets a second look at it.
+    /// **Do not inline this at the call sites.** It is one function because it
+    /// guards two things that must not come apart:
+    ///
+    /// 1. **A bundle is a tar archive, not a component.** What wasmtime
+    ///    compiles is the member `app.entrypoint` names. Handing it the archive
+    ///    instead does not fail cleanly — wasmtime decides the bytes are not
+    ///    binary wasm, falls back to parsing them as WAT text, and reports
+    ///    `input bytes aren't valid utf-8`, which names neither the real
+    ///    problem nor the archive.
+    /// 2. **Decoding is the ingest-side validation gate.** It verifies the
+    ///    digest and rejects a core module before wasmtime gets its second
+    ///    look. Extracting a member without decoding first would skip it.
+    ///
+    /// Separating them puts the extraction one edit away from being done
+    /// without the validation, or the validation one edit away from being
+    /// dropped as redundant.
     async fn entrypoint(&self, bundle: &BundleRef) -> Result<Vec<u8>> {
         let bytes = self.store.fetch(bundle).await?;
         let decoded = clwd_bundle::decode(&bytes, Some(*bundle))?;
@@ -221,6 +243,17 @@ impl Sandbox for WasmSandbox {
                 .ok_or(Error::Stopped {})?;
             (instance.bundle, Arc::clone(&instance.logs))
         };
+
+        // An already-spent budget means do not start, the same as `spawn`.
+        // `tokio::time::timeout` alone is not enough: it polls the inner future
+        // before checking the clock, so a fast guest completes and wins the
+        // race against a deadline that had already passed.
+        if opts.deadline.is_some_and(|d| d.is_expired()) {
+            return Err(Error::DeadlineExceeded {
+                phase: Phase::Invoke,
+                limit: std::time::Duration::ZERO,
+            });
+        }
 
         let bytes = self.entrypoint(&bundle).await?;
         let component = self.cache.get_or_compile(&bundle, &bytes).await?;
