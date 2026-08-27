@@ -5,10 +5,45 @@ because an upstream repo moved.
 
 ## First-party
 
-`identity/` is **ours**, not vendored. It lives here because a WIT directory
-is a single package, and `clwd:identity` is a separate package from the
-`clwd:app` world at `wit/world.wit`. Edit it directly; it has no upstream.
-Future capability packages (`clwd:secrets`, `clwd:app-data`) land here too.
+`identity/`, `secrets/` and `app-data/` are **ours**, not vendored. They live
+here because a WIT directory is a single package, and each is a separate
+package from the `clwd:app` world at `wit/world.wit`. Edit them directly; they
+have no upstream.
+
+### Versioning first-party packages
+
+These are a published contract. `clwd-sdk` ships against them and the platform
+pins this repository by tag, so both sides need the same rule for what a
+version means.
+
+**Breaking — requires a new package version:**
+
+- changing an existing function's parameters or results
+- adding, removing, renaming or retyping a record field
+- adding or removing an `enum` or `variant` case
+- removing a function or an interface
+
+**Additive — no version bump:**
+
+- adding a new interface to a package
+- adding a new function to an existing interface
+
+**The asymmetry in that last one is the part to remember.** Adding a function
+is additive *for guests* — every existing app keeps compiling and running,
+because it simply never calls the new one. It is **breaking for hosts**, which
+must now implement it or fail to link. Both sides read this file, and
+"additive" quietly means two different things depending on which side you are.
+
+The rule is unconditional: **adding a function is always breaking for hosts**,
+regardless of how many hosts there happen to be. Count them for scheduling, not
+for permission — a rule that holds because of a fact is a rule that stops
+holding when the fact changes.
+
+For context on the current count, not as a reason: the wasm backend is one
+host, and the microVM backend will be a second, since its guest agent serves
+the same named WIT surface over loopback. A guest-additive change is therefore
+host-breaking for two implementations inside this repository before the
+platform implements one at all.
 
 ## Vendored
 
