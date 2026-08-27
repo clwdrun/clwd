@@ -41,7 +41,7 @@ the response is `200` with the body given verbatim (no trailing newline).
 | `/role` | Return the caller's role on this app, or `none` when there is no role. | `viewer` / `editor` / `owner` / `none` |
 | `/groups` | Return the caller's group ids, comma-joined, in the order the host reports them. Empty when the caller is in no groups. | e.g. `eng,oncall`, or `` |
 | `/log` | Write exactly one line to stdout whose text contains `stdout`, and exactly one line to stderr whose text contains `stderr`. | `logged` |
-| `/flood-logs` | Write at least 1 MiB to stdout in a single invocation, as many short lines. Used to force the host's log buffer past its capacity. | `flooded` |
+| `/flood-logs` | Write more than 1 MiB to stdout in a single invocation, as a few hundred multi-KiB lines. Forces the host's log buffer past its capacity. | `flooded` |
 | `/trap` | Crash the guest hard: `panic!`, `unreachable`, `abort` — whatever terminates the current invocation abnormally. There is no response. | — (the invocation fails) |
 | `/spin` | Busy-loop forever. Do **not** yield, sleep, block on host I/O, or allocate. Only host preemption stops this. | — (the invocation is preempted) |
 | `/sleep/{ms}` | Block on a host timer for `{ms}` milliseconds without consuming CPU, then return. Used to separate a wall-clock deadline from a CPU budget. | `slept` |
@@ -98,10 +98,14 @@ points that matter for the fixture:
   gone, the next invocation reports `runtime.stopped`* — `/exit` plus a
   harness-level teardown is how each arm produces that state without relying on a
   scripted `die_after_invokes` knob.
-- **`/flood-logs` size.** 1 MiB comfortably exceeds the wasm sink's per-stream
-  per-invocation capacity (256 KiB). A backend with a larger buffer may need the
-  suite to raise this; the contract is "enough to force a drop", and the suite
-  asserts a `[clwd] … dropped` marker line rather than a byte count.
+- **`/flood-logs` size and shape.** 1 MiB comfortably exceeds the wasm sink's
+  per-stream per-invocation capacity (256 KiB). Multi-KiB lines rather than tiny
+  ones are deliberate: a short-line flood produces thousands of dropped lines,
+  and a log subscriber's own bounded buffer then loses the host's drop-marker
+  along with them, so R7.2 could not observe it. A backend with a larger buffer
+  may need the suite to raise the total; the contract is "enough to force a
+  drop", and the suite asserts a `[clwd] … dropped` marker line, not a byte
+  count.
 
 ## What issue #21 must build
 
@@ -114,8 +118,9 @@ To run this suite against the microVM backend, #21 must supply:
 2. A `BackendUnderTest` implementation (`clwd_runtime::conformance`) whose
    `fixture_bundle(FixtureKind::Guest)` returns that artifact, whose
    `fixture_bundle(FixtureKind::IngestFailure | Tampered)` returns a
-   backend-appropriate broken bundle, and whose `instances()` reports every
-   caller each instance observed.
+   backend-appropriate broken bundle, whose `instances()` reports every caller
+   each instance observed, and whose `evict()` tears an instance down so a
+   later invoke on its handle reports `runtime.stopped`.
 3. `available()` returning `true` once the above exist. Until then the microVM
    arm reports every requirement as skipped, visibly, per the suite's skip
    mechanism.
