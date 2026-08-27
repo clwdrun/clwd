@@ -14,9 +14,9 @@ package clwd:identity@0.1.0;
 // The cost is a real invariant, and it is NOT free. `wasi:http/proxy`, which
 // world `clwd:app` includes, explicitly permits the opposite:
 //
-//     "A host may arbitrarily reuse or not reuse component instance when
-//      delivering incoming HTTP requests and thus a component must be able
-//      to handle 0..N calls to `handle`."
+// "A host may arbitrarily reuse or not reuse component instance when
+// delivering incoming HTTP requests and thus a component must be able to
+// handle 0..N calls to `handle`."
 //
 // Ambient identity is only sound if clwd overrides that permission. So:
 //

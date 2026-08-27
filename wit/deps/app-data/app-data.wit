@@ -9,9 +9,9 @@ package clwd:app-data@0.1.0;
 //
 // It is also the opposite of what most authors will assume, because
 // `clwd:identity` sits in the same world and is per-caller. An app that wants
-// per-caller data must scope its own keys by the caller's subject:
-//
-//     let key = format!("note/{}", get-caller-subject());
+// per-caller data must scope its own keys by the caller's subject — build the
+// key as "note/" followed by the caller's subject id, so each caller reads and
+// writes only their own.
 //
 // An app that forgets to do that has built a shared notepad, and will find out
 // from its users rather than from a compiler. Anything storing personal data
