@@ -66,8 +66,27 @@ impl Guest for Component {
                 "logged".into()
             }
 
+            // Write more than 1 MiB to stdout in one call, past the host's log
+            // buffer, so the host's drop-marker line is produced. A few hundred
+            // multi-KiB lines rather than thousands of tiny ones: see the
+            // FIXTURE note — a short-line flood produces so many dropped lines
+            // that a subscriber's own buffer loses the marker too.
+            "/flood-logs" => {
+                let line = "x".repeat(4096);
+                for _ in 0..300 {
+                    println!("{line}");
+                }
+                "flooded".into()
+            }
+
             // A trap, so the host's trap mapping has something to map.
             "/trap" => panic!("guest panicked on purpose"),
+
+            // A clean exit from inside the guest. On the wasm backend the next
+            // call rebuilds the instance, so this is just a normal return and
+            // R2.2 is reached by the harness evicting the instance; a long-lived
+            // backend tears the instance down here.
+            "/exit" => "exited".into(),
 
             // Never returns and never yields. Only preemption stops it.
             "/spin" => {
@@ -76,6 +95,17 @@ impl Guest for Component {
                     n = n.wrapping_add(1);
                     std::hint::black_box(n);
                 }
+            }
+
+            // Block on a host timer for the given milliseconds without burning
+            // CPU, then return. Separates a wall-clock deadline from a CPU
+            // budget (R4.3).
+            p if p.starts_with("/sleep/") => {
+                let ms: u64 = p["/sleep/".len()..].parse().unwrap_or(0);
+                let nanos = ms.saturating_mul(1_000_000);
+                let pollable = wasi::clocks::monotonic_clock::subscribe_duration(nanos);
+                pollable.block();
+                "slept".into()
             }
 
             // Allocates until the host refuses, in 1 MiB steps. Held in a Vec
