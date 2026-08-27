@@ -15,19 +15,28 @@ use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpHooks, WasiHttpView};
 
 use crate::identity::{Caller, IdentityCtx, Role};
+use std::collections::HashMap;
+use std::sync::Arc;
 use crate::logs::LogStreamKind;
 use crate::wasm::budget::Budget;
+use crate::wasm::data::{validate_key, AppDataStore, AppId, MIN_VALUE_LIMIT};
 use crate::wasm::limits::BudgetLimiter;
 use crate::wasm::logs::LogSink;
 
 wasmtime::component::bindgen!({
     inline: "
         package clwd:host@0.1.0;
-        world identity-host {
+        world data-host {
             import clwd:identity/context@0.1.0;
+            import clwd:secrets/broker@0.1.0;
+            import clwd:app-data/store@0.1.0;
         }
     ",
     path: "../../wit",
+    // Only app-data is async: it calls a store that may do I/O. Identity and
+    // secrets read per-`Store` state and stay synchronous, which also leaves
+    // #54's identity host untouched.
+    imports: { "clwd:app-data/store": async },
 });
 
 use clwd::identity::types as wit;
@@ -45,6 +54,17 @@ pub(super) struct StoreState {
     /// out of the store's data — wasmtime gives no other place to put it. It is
     /// per-`Store` like everything else in this struct.
     pub(super) limiter: BudgetLimiter,
+    /// Every secret this instance may see, resolved before it started.
+    ///
+    /// Per-`Store` and complete: `get` reads this map and consults nothing
+    /// else, so a secret absent here is not reachable rather than refused.
+    secrets: HashMap<String, Vec<u8>>,
+    /// The application whose data this instance reads and writes. Supplied by
+    /// the host at spawn; no guest can name or alter it.
+    app: AppId,
+    /// Shared across instances by design — see the type's documentation. Every
+    /// operation is scoped by `app`, which is why sharing is safe.
+    app_data: Arc<dyn AppDataStore>,
 }
 
 #[derive(Default)]
@@ -55,6 +75,9 @@ impl StoreState {
     pub(super) fn new(
         identity: IdentityCtx,
         budget: &Budget,
+        secrets: HashMap<String, Vec<u8>>,
+        app: AppId,
+        app_data: Arc<dyn AppDataStore>,
         stdout: LogSink,
         stderr: LogSink,
     ) -> Self {
@@ -66,6 +89,9 @@ impl StoreState {
             table: ResourceTable::new(),
             identity,
             limiter: BudgetLimiter::new(budget),
+            secrets,
+            app,
+            app_data,
         }
     }
 }
@@ -160,12 +186,69 @@ pub(super) fn sinks() -> (LogSink, LogSink) {
     )
 }
 
-/// Wire `clwd:identity/context` into a linker.
+/// Wire the first-party host interfaces into a linker.
 pub(super) fn add_identity_to_linker(
     linker: &mut wasmtime::component::Linker<StoreState>,
 ) -> wasmtime::Result<()> {
     use wasmtime::component::HasSelf;
     clwd::identity::types::add_to_linker::<_, HasSelf<StoreState>>(linker, |s| s)?;
     clwd::identity::context::add_to_linker::<_, HasSelf<StoreState>>(linker, |s| s)?;
+    clwd::secrets::broker::add_to_linker::<_, HasSelf<StoreState>>(linker, |s| s)?;
+    clwd::app_data::store::add_to_linker::<_, HasSelf<StoreState>>(linker, |s| s)?;
     Ok(())
+}
+
+impl clwd::secrets::broker::Host for StoreState {
+    /// Reads the injected map and nothing else.
+    ///
+    /// There is no store to consult and no policy to evaluate: everything this
+    /// instance may see was resolved before it started. `None` covers both "no
+    /// such secret" and "not yours" because they are the same value, not
+    /// because this function treats them alike — see DECISION 1 in
+    /// `wit/deps/secrets/secrets.wit`.
+    fn get(&mut self, name: String) -> Option<Vec<u8>> {
+        self.secrets.get(&name).cloned()
+    }
+}
+
+/// Turn a host-side failure into the interface's error, without leaking which
+/// application or key was involved into the guest.
+fn store_unavailable(_: crate::error::Error) -> clwd::app_data::store::Error {
+    clwd::app_data::store::Error::Unavailable
+}
+
+impl clwd::app_data::store::Host for StoreState {
+    async fn get(
+        &mut self,
+        key: String,
+    ) -> Result<Option<Vec<u8>>, clwd::app_data::store::Error> {
+        validate_key(&key).map_err(clwd::app_data::store::Error::InvalidKey)?;
+        self.app_data
+            .get(&self.app, &key)
+            .await
+            .map_err(store_unavailable)
+    }
+
+    async fn set(
+        &mut self,
+        key: String,
+        value: Vec<u8>,
+    ) -> Result<(), clwd::app_data::store::Error> {
+        validate_key(&key).map_err(clwd::app_data::store::Error::InvalidKey)?;
+        if value.len() as u64 > MIN_VALUE_LIMIT {
+            return Err(clwd::app_data::store::Error::ValueTooLarge(MIN_VALUE_LIMIT));
+        }
+        self.app_data
+            .set(&self.app, &key, value)
+            .await
+            .map_err(store_unavailable)
+    }
+
+    async fn delete(&mut self, key: String) -> Result<(), clwd::app_data::store::Error> {
+        validate_key(&key).map_err(clwd::app_data::store::Error::InvalidKey)?;
+        self.app_data
+            .delete(&self.app, &key)
+            .await
+            .map_err(store_unavailable)
+    }
 }

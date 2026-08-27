@@ -65,6 +65,10 @@ use tokio::sync::Mutex;
 
 use budget::Budget;
 use cache::ComponentCache;
+pub use data::{
+    AppDataStore, AppId, AppIdResolver, DigestAsAppId, MemoryAppDataStore, MemorySecretStore,
+    SecretStore,
+};
 use logs::InstanceLogs;
 
 /// Where a backend reads bundle bytes from.
@@ -110,6 +114,15 @@ impl BundleStore for MemoryBundleStore {
 
 struct Instance {
     bundle: BundleRef,
+    /// The application this artifact is a version of, resolved once at spawn.
+    app: AppId,
+    /// Every secret this instance may see, resolved before it ran.
+    ///
+    /// Held here rather than re-resolved per request: under per-invocation
+    /// instantiation a fresh `Store` is built for every call, and re-consulting
+    /// the store each time would put an I/O round trip on every request and
+    /// let the set change underneath a running instance.
+    secrets: HashMap<String, Vec<u8>>,
     /// Resolved once, from the manifest the digest sealed. Kept here so
     /// `invoke` needs no second decode on the cache-hit path.
     budget: Budget,
@@ -121,6 +134,9 @@ struct Instance {
 pub struct WasmSandbox {
     cache: ComponentCache,
     store: Arc<dyn BundleStore>,
+    secrets: Arc<dyn SecretStore>,
+    app_data: Arc<dyn AppDataStore>,
+    apps: Arc<dyn AppIdResolver>,
     instances: Mutex<HashMap<InstanceId, Instance>>,
     next_id: std::sync::atomic::AtomicU64,
 }
@@ -132,13 +148,37 @@ impl std::fmt::Debug for WasmSandbox {
 }
 
 impl WasmSandbox {
+    /// A sandbox with in-memory stores, for local development and tests.
+    ///
+    /// The defaults are deliberately ephemeral. In particular the app identity
+    /// is the artifact digest, which is only sound because nothing here
+    /// outlives the process — see [`DigestAsAppId`].
     pub fn new(store: Arc<dyn BundleStore>) -> Result<Self> {
+        Self::with_stores(
+            store,
+            Arc::new(MemorySecretStore::new()),
+            Arc::new(MemoryAppDataStore::new()),
+            Arc::new(DigestAsAppId),
+        )
+    }
+
+    /// A sandbox with stores the caller supplies. This is the seam the platform
+    /// reaches through.
+    pub fn with_stores(
+        store: Arc<dyn BundleStore>,
+        secrets: Arc<dyn SecretStore>,
+        app_data: Arc<dyn AppDataStore>,
+        apps: Arc<dyn AppIdResolver>,
+    ) -> Result<Self> {
         let engine = engine::build()?;
         // Nothing enforces a deadline until something advances the epoch.
         epoch::spawn(&engine);
         Ok(Self {
             cache: ComponentCache::new(engine)?,
             store,
+            secrets,
+            app_data,
+            apps,
             instances: Mutex::new(HashMap::new()),
             next_id: std::sync::atomic::AtomicU64::new(0),
         })
@@ -178,10 +218,13 @@ impl WasmSandbox {
     /// Separating them puts the extraction one edit away from being done
     /// without the validation, or the validation one edit away from being
     /// dropped as redundant.
-    async fn entrypoint(&self, bundle: &BundleRef) -> Result<(Vec<u8>, Budget)> {
+    async fn entrypoint(&self, bundle: &BundleRef) -> Result<(Vec<u8>, Budget, Vec<String>)> {
         let bytes = self.store.fetch(bundle).await?;
         let decoded = clwd_bundle::decode(&bytes, Some(*bundle))?;
         let budget = Budget::from_manifest(&decoded.manifest.capabilities.limits);
+        // The names the manifest declares. What the store will authorise of
+        // these is decided at spawn; the manifest can narrow, never grant.
+        let declared = decoded.manifest.capabilities.secrets.clone();
         let entrypoint = &decoded.manifest.entrypoint;
         let data = decoded
             .members
@@ -191,7 +234,7 @@ impl WasmSandbox {
             .ok_or_else(|| Error::Internal {
                 source: format!("entrypoint {entrypoint:?} missing after validation").into(),
             })?;
-        Ok((data, budget))
+        Ok((data, budget, declared))
     }
 }
 
@@ -204,7 +247,7 @@ impl Sandbox for WasmSandbox {
         opts: SpawnOptions,
     ) -> Result<Handle> {
         let deadline = opts.deadline;
-        let (bytes, budget) = self.entrypoint(&bundle).await?;
+        let (bytes, budget, declared_secrets) = self.entrypoint(&bundle).await?;
 
         let expired = || Error::DeadlineExceeded {
             phase: Phase::Spawn,
@@ -226,6 +269,17 @@ impl Sandbox for WasmSandbox {
             None => compile.await?,
         };
 
+        // Resolve identity and secrets before the instance exists. A failure
+        // here means it never starts, which is what makes `secrets.get`
+        // infallible at call time.
+        let app = self.apps.resolve(&bundle).await?;
+        let secrets: HashMap<String, Vec<u8>> = self
+            .secrets
+            .resolve(&app, &declared_secrets)
+            .await?
+            .into_iter()
+            .collect();
+
         let id = InstanceId::new(format!(
             "wasm-{}",
             self.next_id
@@ -235,6 +289,8 @@ impl Sandbox for WasmSandbox {
             id.clone(),
             Instance {
                 bundle,
+                app,
+                secrets,
                 budget,
                 logs: Arc::new(InstanceLogs::default()),
                 stopped: false,
@@ -244,13 +300,19 @@ impl Sandbox for WasmSandbox {
     }
 
     async fn invoke(&self, handle: &Handle, req: Request, opts: InvokeOptions) -> Result<Response> {
-        let (bundle, budget, logs) = {
+        let (bundle, budget, app, secrets, logs) = {
             let instances = self.instances.lock().await;
             let instance = instances
                 .get(handle.instance())
                 .filter(|i| !i.stopped)
                 .ok_or(Error::Stopped {})?;
-            (instance.bundle, instance.budget, Arc::clone(&instance.logs))
+            (
+                instance.bundle,
+                instance.budget,
+                instance.app.clone(),
+                instance.secrets.clone(),
+                Arc::clone(&instance.logs),
+            )
         };
 
         // An already-spent budget means do not start, the same as `spawn`.
@@ -271,7 +333,7 @@ impl Sandbox for WasmSandbox {
         let component = match self.cache.get(&bundle).await {
             Some(prepared) => prepared,
             None => {
-                let (bytes, _) = self.entrypoint(&bundle).await?;
+                let (bytes, _, _) = self.entrypoint(&bundle).await?;
                 self.cache.get_or_compile(&bundle, &bytes).await?
             }
         };
@@ -279,8 +341,13 @@ impl Sandbox for WasmSandbox {
         let call = invoke::run(
             self.cache.engine(),
             &component,
-            handle.identity().clone(),
-            budget,
+            invoke::InstanceContext {
+                identity: handle.identity().clone(),
+                budget,
+                secrets,
+                app,
+                app_data: Arc::clone(&self.app_data),
+            },
             req,
             opts.request_id.clone(),
             Arc::clone(&logs),

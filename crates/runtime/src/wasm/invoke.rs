@@ -29,19 +29,45 @@ use crate::wasm::logs::InstanceLogs;
 /// stay infrequent enough not to cost a fiber switch every millisecond.
 const SLICE_TICKS: u64 = 5;
 
+/// Everything one instance is, gathered at spawn and handed to each of its
+/// invocations. Grouped rather than passed as loose parameters because they
+/// travel together and always will: each addition here is another thing an
+/// instance *is*, not another argument the caller chooses.
+pub(super) struct InstanceContext {
+    pub(super) identity: IdentityCtx,
+    pub(super) budget: Budget,
+    pub(super) secrets: std::collections::HashMap<String, Vec<u8>>,
+    pub(super) app: crate::wasm::data::AppId,
+    pub(super) app_data: Arc<dyn crate::wasm::data::AppDataStore>,
+}
+
 pub(super) async fn run(
     engine: &Engine,
     prepared: &Prepared,
-    identity: IdentityCtx,
-    budget: Budget,
+    context: InstanceContext,
     req: Request,
     request_id: Option<RequestId>,
     logs: Arc<InstanceLogs>,
 ) -> Result<Response> {
+    let InstanceContext {
+        identity,
+        budget,
+        secrets,
+        app,
+        app_data,
+    } = context;
     let (stdout, stderr) = host::sinks();
     let mut store = Store::new(
         engine,
-        StoreState::new(identity, &budget, stdout.clone(), stderr.clone()),
+        StoreState::new(
+            identity,
+            &budget,
+            secrets,
+            app,
+            app_data,
+            stdout.clone(),
+            stderr.clone(),
+        ),
     );
 
     // Resource caps. `Store::limiter` resolves the limiter out of the store's
