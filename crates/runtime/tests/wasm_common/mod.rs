@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use clwd_bundle::{build, BundleRef, Capabilities, Limits, Runtime};
 use clwd_runtime::identity::{Caller, GroupId, IdentityCtx, OrgId, Principal, Role, SubjectId};
-use clwd_runtime::wasm::{MemoryBundleStore, WasmSandbox};
+use clwd_runtime::wasm::{
+    AppId, DigestAsAppId, MemoryAppDataStore, MemoryBundleStore, MemorySecretStore, WasmSandbox,
+};
 use clwd_runtime::{Body, Request};
 
 /// A real component built from `wit/world.wit`. Rebuild with
@@ -18,6 +20,77 @@ pub const CORE_MODULE: &[u8] = include_bytes!("../fixtures/core-module.wasm");
 
 pub fn bundle_of(entry: &[u8]) -> (BundleRef, Vec<u8>) {
     bundle_with_limits(entry, 5000, 128)
+}
+
+/// A bundle whose manifest declares the given secret names.
+pub fn bundle_declaring(entry: &[u8], secrets: &[&str]) -> (BundleRef, Vec<u8>) {
+    let encoded = clwd_bundle::build(
+        Runtime::Wasm,
+        "app.wasm",
+        Capabilities {
+            version: 1,
+            egress: Vec::new(),
+            secrets: secrets.iter().map(|s| (*s).to_owned()).collect(),
+            storage_namespaces: Vec::new(),
+            limits: Limits {
+                cpu_ms: 5000,
+                memory_mb: 128,
+            },
+        },
+        vec![clwd_bundle::File {
+            path: "app.wasm".to_owned(),
+            data: entry.to_vec(),
+            executable: false,
+        }],
+    )
+    .expect("fixture is a valid bundle");
+    (encoded.digest, encoded.bytes)
+}
+
+/// A sandbox whose secret store holds `held`, for a bundle declaring
+/// `declared`. The injection set is the intersection.
+pub fn sandbox_with_secrets(
+    declared: &[&str],
+    held: &[(&str, &str)],
+) -> (WasmSandbox, BundleRef, Arc<MemoryAppDataStore>) {
+    let (digest, bytes) = bundle_declaring(GUEST, declared);
+    let bundles = MemoryBundleStore::new();
+    bundles.insert(&digest, bytes);
+
+    let secrets = MemorySecretStore::new();
+    let app = AppId::new(digest.to_string());
+    for (name, value) in held {
+        secrets.insert(&app, name, *value);
+    }
+
+    let data = Arc::new(MemoryAppDataStore::new());
+    let sandbox = WasmSandbox::with_stores(
+        Arc::new(bundles),
+        Arc::new(secrets),
+        Arc::clone(&data) as Arc<dyn clwd_runtime::wasm::AppDataStore>,
+        Arc::new(DigestAsAppId),
+    )
+    .expect("engine builds");
+    (sandbox, digest, data)
+}
+
+/// Two distinct apps sharing one sandbox, so their namespaces can be compared.
+pub fn sandbox_with_two_apps() -> (WasmSandbox, BundleRef, BundleRef) {
+    // Different declared secrets give different manifests, so different
+    // digests, so different apps under `DigestAsAppId`.
+    let (one, one_bytes) = bundle_declaring(GUEST, &["a"]);
+    let (two, two_bytes) = bundle_declaring(GUEST, &["b"]);
+    let bundles = MemoryBundleStore::new();
+    bundles.insert(&one, one_bytes);
+    bundles.insert(&two, two_bytes);
+    let sandbox = WasmSandbox::with_stores(
+        Arc::new(bundles),
+        Arc::new(MemorySecretStore::new()),
+        Arc::new(MemoryAppDataStore::new()),
+        Arc::new(DigestAsAppId),
+    )
+    .expect("engine builds");
+    (sandbox, one, two)
 }
 
 /// A bundle whose sealed manifest carries the given limits.

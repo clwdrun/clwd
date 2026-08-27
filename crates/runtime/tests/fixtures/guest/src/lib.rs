@@ -16,6 +16,15 @@ static mut COUNTER: u32 = 0;
 
 struct Component;
 
+/// Render an app-data error so a test can assert on which one it was.
+fn describe(e: clwd::app_data::store::Error) -> String {
+    match e {
+        clwd::app_data::store::Error::InvalidKey(why) => format!("invalid-key:{why}"),
+        clwd::app_data::store::Error::ValueTooLarge(limit) => format!("value-too-large:{limit}"),
+        clwd::app_data::store::Error::Unavailable => "unavailable".into(),
+    }
+}
+
 fn caller_subject() -> String {
     match clwd::identity::context::get_caller() {
         clwd::identity::types::Caller::Anonymous => "anonymous".to_string(),
@@ -79,6 +88,59 @@ impl Guest for Component {
                     chunk[0] = held.len() as u8;
                     std::hint::black_box(&chunk);
                     held.push(chunk);
+                }
+            }
+
+            // /secret/NAME -> the value, or "absent" when this app was not
+            // given it. The guest cannot tell "no such secret" from "not
+            // yours"; both arrive as none.
+            p if p.starts_with("/secret/") => {
+                let name = &p["/secret/".len()..];
+                match clwd::secrets::broker::get(name) {
+                    Some(value) => String::from_utf8_lossy(&value).into_owned(),
+                    None => "absent".into(),
+                }
+            }
+
+            // /data/get/KEY
+            p if p.starts_with("/data/get/") => {
+                let key = &p["/data/get/".len()..];
+                match clwd::app_data::store::get(key) {
+                    Ok(Some(v)) => String::from_utf8_lossy(&v).into_owned(),
+                    Ok(None) => "absent".into(),
+                    Err(e) => format!("error:{}", describe(e)),
+                }
+            }
+
+            // /data/set/KEY/VALUE — an empty VALUE is legal and distinct from
+            // absence.
+            p if p.starts_with("/data/set/") => {
+                let rest = &p["/data/set/".len()..];
+                let (key, value) = match rest.split_once('/') {
+                    Some((k, v)) => (k, v),
+                    None => (rest, ""),
+                };
+                match clwd::app_data::store::set(key, value.as_bytes()) {
+                    Ok(()) => "stored".into(),
+                    Err(e) => format!("error:{}", describe(e)),
+                }
+            }
+
+            // /data/delete/KEY
+            p if p.starts_with("/data/delete/") => {
+                let key = &p["/data/delete/".len()..];
+                match clwd::app_data::store::delete(key) {
+                    Ok(()) => "deleted".into(),
+                    Err(e) => format!("error:{}", describe(e)),
+                }
+            }
+
+            // /data/big/N — store N bytes, to reach the value ceiling.
+            p if p.starts_with("/data/big/") => {
+                let n: usize = p["/data/big/".len()..].parse().unwrap_or(0);
+                match clwd::app_data::store::set("big", &vec![b'x'; n]) {
+                    Ok(()) => "stored".into(),
+                    Err(e) => format!("error:{}", describe(e)),
                 }
             }
 
