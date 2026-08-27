@@ -85,6 +85,16 @@ pub trait BackendUnderTest: Send + Sync {
     /// field is a `Vec` so a violation is representable and therefore
     /// assertable.
     fn instances(&self) -> Vec<InstanceObservation>;
+
+    /// Make the instance behind `id` gone, so an invoke on a still-live handle
+    /// for it reports `runtime.stopped` (`R2.1`, `R2.2`).
+    ///
+    /// [`Sandbox::stop`] consumes its handle, so the suite cannot use it to
+    /// reach the "invoke after the instance is gone" state — it would have no
+    /// handle left to invoke with. A long-lived backend implements this by real
+    /// teardown (the guest's `/exit` plus stopping the VM); the wasm arm evicts
+    /// the instance record. Only called after [`sandbox`](Self::sandbox).
+    async fn evict(&self, id: &InstanceId);
 }
 
 /// What the suite wants the world to contain when it asks for a sandbox.
@@ -145,8 +155,11 @@ pub enum FixtureKind {
 }
 
 /// Every caller one instance was handed to, as recorded by a backend arm.
+///
+/// A plain struct on purpose: every arm — including the microVM arm #21 builds
+/// — constructs these from its own recording decorator, so the fields are the
+/// contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct InstanceObservation {
     pub instance: InstanceId,
     /// The caller-isolation invariant says this is always exactly one.
@@ -176,6 +189,21 @@ pub struct Requirement {
 /// Every backend must satisfy every entry. Adding a requirement here without a
 /// corresponding test — or a test without an entry here — fails the suite's
 /// `every_requirement_has_exactly_one_test` check.
+///
+/// # Ids are permanent
+///
+/// A requirement id becomes a compatibility surface the moment this list is
+/// published — in a PR body, in `FIXTURE.md`, in whatever issue #21 is built
+/// against. From then on an id is never reused and never renumbered:
+///
+/// - A retired requirement leaves its number as a gap. Do not close ranks —
+///   a later renumber silently breaks every cross-reference to the old id.
+/// - A new requirement takes the next unused number in its group.
+/// - A requirement that is cut stays here as a tombstone line stating that,
+///   rather than being deleted, so a cite of the old number still resolves.
+///
+/// Same rule as the owned codes in `error.rs`: an identifier other people
+/// cite cannot move.
 pub const REQUIREMENTS: &[Requirement] = &[
     // --- caller isolation -------------------------------------------------
     Requirement {
