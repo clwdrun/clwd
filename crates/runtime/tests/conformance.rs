@@ -28,12 +28,20 @@ use clwd_runtime::{
     SpawnOptions,
 };
 
+mod arm_broken; // SCRATCH — Phase 5 experiment (round 2)
 mod arm_wasm;
 
 /// Every backend arm the suite knows about. Unbuilt arms still appear here and
 /// report every requirement as skipped.
 fn arms() -> Vec<Box<dyn BackendUnderTest>> {
-    vec![Box::new(arm_wasm::WasmArm::new())]
+    // SCRATCH — Phase 5: select a deliberately-broken arm. Reverted after the run.
+    match std::env::var("CONFORMANCE_ARM").as_deref() {
+        Ok("identity-by-bundle") => vec![Box::new(arm_broken::IdentityByBundle::new())],
+        Ok("trap-for-deadline") => vec![Box::new(arm_broken::TrapForInvokeDeadline::new())],
+        Ok("secrets-ignore-grant") => vec![Box::new(arm_broken::SecretsIgnoreGrant::new())],
+        Ok("appdata-per-caller") => vec![Box::new(arm_broken::AppDataPerCaller::new())],
+        _ => vec![Box::new(arm_wasm::WasmArm::new())],
+    }
 }
 
 /// Skip line for an arm that is not built in this binary. Returns `true` when
