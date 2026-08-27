@@ -171,12 +171,20 @@ pub(super) async fn run(
 ///
 /// # On `Phase::Spawn`
 ///
-/// Both phases are mapped, but an epoch interrupt during instantiation is not
-/// reachable with an ordinary component: instantiation runs no guest loops and
-/// completes in tens of microseconds, far inside any budget the manifest can
-/// express. Cold start is bounded by the caller's wall-clock deadline instead,
-/// which `spawn` enforces. The phase is threaded through anyway so a component
-/// with an expensive start is classified correctly rather than surprisingly.
+/// Two different things carry the spawn phase, and only one of them is
+/// unreachable here. `DeadlineExceeded { phase: Spawn }` **is** reachable and
+/// is a conformance requirement (R2.5): `spawn` in `mod.rs` wraps compilation
+/// in a wall-clock timeout and returns it directly when the caller's cold-start
+/// deadline is already spent or runs out. Every backend owes that, and the
+/// conformance suite exercises it with a zero-length deadline.
+///
+/// What is unreachable is the path *through this function*: an epoch interrupt
+/// during instantiation, classified with `Phase::Spawn`. Instantiation runs no
+/// guest loops and completes in tens of microseconds, far inside any budget the
+/// manifest can express, so `classify` never sees a `Trap::Interrupt` with
+/// `phase == Spawn` in practice. The phase is threaded through anyway so a
+/// component with an expensive start is classified correctly rather than
+/// surprisingly.
 ///
 ///
 /// Three outcomes that must not be conflated, because they call for different
@@ -244,8 +252,10 @@ mod tests {
     }
 
     /// `UpdateDeadline::Interrupt` raises `Trap::Interrupt`. Both phases map,
-    /// though only the invoke phase is reachable in practice — see the note on
-    /// `classify`.
+    /// though only the invoke phase reaches `classify` with an interrupt in
+    /// practice — see the note on `classify`. This is about the epoch path only;
+    /// a spawn-phase deadline still fires, via the wall-clock timeout in
+    /// `spawn`, and is a conformance requirement.
     #[test]
     fn an_epoch_interrupt_maps_to_deadline_exceeded_in_either_phase() {
         for phase in [Phase::Spawn, Phase::Invoke] {
