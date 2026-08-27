@@ -1,0 +1,83 @@
+package clwd:app-data@0.1.0;
+
+// ---------------------------------------------------------------------------
+// DECISION 1 — a namespace belongs to the APP, not to the caller.
+//
+// Every caller of one app reads and writes THE SAME data. Caller A stores a
+// note and caller B reads it. That is not a leak; it is the feature. The data
+// belongs to the application, the way rows in an application's database do.
+//
+// It is also the opposite of what most authors will assume, because
+// `clwd:identity` sits in the same world and is per-caller. An app that wants
+// per-caller data must scope its own keys by the caller's subject:
+//
+//     let key = format!("note/{}", get-caller-subject());
+//
+// An app that forgets to do that has built a shared notepad, and will find out
+// from its users rather than from a compiler. Anything storing personal data
+// must key by subject explicitly.
+//
+// DECISION 2 — no `list-keys` in 0.1.0.
+//
+// Not for secrecy: within an app's own namespace, enumeration leaks nothing.
+// The objection is that it commits every future backend to supporting
+// efficient enumeration forever, in exchange for a capability no consumer has
+// asked for. Adding it later is additive; removing it would not be.
+//
+// DECISION 3 — no compare-and-swap, and no other atomicity primitive.
+//
+// The right shape for one depends on the backend, and no backend exists yet.
+// Guessing now produces an operation that is both wrong and unremovable.
+// Applications needing atomicity should not assume they have it here.
+// ---------------------------------------------------------------------------
+
+/// A per-application key-value namespace.
+interface store {
+    /// Why an operation could not be performed.
+    ///
+    /// Note what is *not* here: "key not found". Absence is an ordinary result,
+    /// not an error — `get` returns `ok(none)`.
+    variant error {
+        /// The key does not satisfy the rules on `get`. Carries a description
+        /// for a human; do not parse it.
+        invalid-key(string),
+        /// The value exceeds what this host accepts. Carries that host's limit
+        /// in bytes, so a caller can adapt rather than guess.
+        value-too-large(u64),
+        /// The backing store could not be reached. Retrying may work; the
+        /// operation may or may not have taken effect.
+        unavailable,
+    }
+
+    /// The value stored at `key`, or `none` if nothing is stored there.
+    ///
+    /// # Keys
+    ///
+    /// A key is 1 to 128 bytes of `a`-`z`, `0`-`9`, `.`, `_` or `-`, and may
+    /// not begin or end with `.`, `_` or `-`. Anything else is `invalid-key`.
+    ///
+    /// The rules are deliberately tighter than any one backend needs. Every
+    /// plausible one — a filesystem, an object store, a key-value service —
+    /// has different limits, and a key space that is legal here but not there
+    /// becomes a compatibility problem the first time the backing store
+    /// changes. Loosening these later is additive; tightening them would not
+    /// be, so they start tight.
+    get: func(key: string) -> result<option<list<u8>>, error>;
+
+    /// Store `value` at `key`, replacing anything already there.
+    ///
+    /// Values are opaque bytes: this interface never interprets them, and a
+    /// host must not require them to be valid UTF-8. An empty value is legal
+    /// and is distinct from absence — a key set to an empty value is present.
+    ///
+    /// Every host accepts values of at least 1 MiB. A host may accept more; a
+    /// host that refuses reports its own limit in `value-too-large`.
+    set: func(key: string, value: list<u8>) -> result<_, error>;
+
+    /// Remove `key`.
+    ///
+    /// Idempotent: deleting a key that is not present succeeds. A caller that
+    /// needs to know whether anything was there should `get` first, accepting
+    /// that nothing here makes the pair atomic — see DECISION 3.
+    delete: func(key: string) -> result<_, error>;
+}
