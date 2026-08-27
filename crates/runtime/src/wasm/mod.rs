@@ -42,6 +42,7 @@
 
 mod budget;
 mod cache;
+mod data;
 mod engine;
 mod epoch;
 mod host;
