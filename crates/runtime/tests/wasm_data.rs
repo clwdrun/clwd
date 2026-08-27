@@ -34,8 +34,10 @@ async fn a_guest_reads_a_secret_it_was_given() {
 async fn an_ungranted_secret_is_indistinguishable_from_one_that_does_not_exist() {
     // The store holds `other`, but the manifest never declared it, so it is
     // not in the injection set.
-    let (sandbox, digest, _) =
-        sandbox_with_secrets(&["api-key"], &[("api-key", "s3kr1t"), ("other", "not-yours")]);
+    let (sandbox, digest, _) = sandbox_with_secrets(
+        &["api-key"],
+        &[("api-key", "s3kr1t"), ("other", "not-yours")],
+    );
     let handle = sandbox
         .spawn(digest, user("alice"), SpawnOptions::default())
         .await
@@ -55,14 +57,18 @@ async fn an_ungranted_secret_is_indistinguishable_from_one_that_does_not_exist()
 /// name the store will not authorise yields nothing.
 #[tokio::test]
 async fn a_declared_secret_the_store_will_not_authorise_is_still_absent() {
-    let (sandbox, digest, _) = sandbox_with_secrets(&["api-key", "unauthorised"], &[("api-key", "s3kr1t")]);
+    let (sandbox, digest, _) =
+        sandbox_with_secrets(&["api-key", "unauthorised"], &[("api-key", "s3kr1t")]);
     let handle = sandbox
         .spawn(digest, user("alice"), SpawnOptions::default())
         .await
         .expect("spawns");
 
     assert_eq!(call(&sandbox, &handle, "/secret/api-key").await, "s3kr1t");
-    assert_eq!(call(&sandbox, &handle, "/secret/unauthorised").await, "absent");
+    assert_eq!(
+        call(&sandbox, &handle, "/secret/unauthorised").await,
+        "absent"
+    );
 }
 
 #[tokio::test]
@@ -74,13 +80,22 @@ async fn app_data_round_trips_and_delete_makes_it_absent() {
         .expect("spawns");
 
     assert_eq!(call(&sandbox, &handle, "/data/get/note").await, "absent");
-    assert_eq!(call(&sandbox, &handle, "/data/set/note/hello").await, "stored");
+    assert_eq!(
+        call(&sandbox, &handle, "/data/set/note/hello").await,
+        "stored"
+    );
     assert_eq!(call(&sandbox, &handle, "/data/get/note").await, "hello");
-    assert_eq!(call(&sandbox, &handle, "/data/delete/note").await, "deleted");
+    assert_eq!(
+        call(&sandbox, &handle, "/data/delete/note").await,
+        "deleted"
+    );
     assert_eq!(call(&sandbox, &handle, "/data/get/note").await, "absent");
 
     // Idempotent: deleting what is not there succeeds.
-    assert_eq!(call(&sandbox, &handle, "/data/delete/note").await, "deleted");
+    assert_eq!(
+        call(&sandbox, &handle, "/data/delete/note").await,
+        "deleted"
+    );
 }
 
 /// An empty value is legal and is *present* — distinct from absence.
@@ -113,7 +128,10 @@ async fn two_callers_of_one_app_share_a_namespace() {
         .await
         .expect("spawns");
 
-    assert_eq!(call(&sandbox, &alice, "/data/set/note/from-alice").await, "stored");
+    assert_eq!(
+        call(&sandbox, &alice, "/data/set/note/from-alice").await,
+        "stored"
+    );
     assert_eq!(
         call(&sandbox, &bob, "/data/get/note").await,
         "from-alice",
@@ -136,7 +154,10 @@ async fn two_apps_have_separate_namespaces() {
         .await
         .expect("spawns");
 
-    assert_eq!(call(&sandbox, &first, "/data/set/note/app-one").await, "stored");
+    assert_eq!(
+        call(&sandbox, &first, "/data/set/note/app-one").await,
+        "stored"
+    );
     assert_eq!(
         call(&sandbox, &second, "/data/get/note").await,
         "absent",

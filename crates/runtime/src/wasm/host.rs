@@ -15,13 +15,13 @@ use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpHooks, WasiHttpView};
 
 use crate::identity::{Caller, IdentityCtx, Role};
-use std::collections::HashMap;
-use std::sync::Arc;
 use crate::logs::LogStreamKind;
 use crate::wasm::budget::Budget;
 use crate::wasm::data::{validate_key, AppDataStore, AppId, MIN_VALUE_LIMIT};
 use crate::wasm::limits::BudgetLimiter;
 use crate::wasm::logs::LogSink;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 wasmtime::component::bindgen!({
     inline: "
@@ -218,10 +218,7 @@ fn store_unavailable(_: crate::error::Error) -> clwd::app_data::store::Error {
 }
 
 impl clwd::app_data::store::Host for StoreState {
-    async fn get(
-        &mut self,
-        key: String,
-    ) -> Result<Option<Vec<u8>>, clwd::app_data::store::Error> {
+    async fn get(&mut self, key: String) -> Result<Option<Vec<u8>>, clwd::app_data::store::Error> {
         validate_key(&key).map_err(clwd::app_data::store::Error::InvalidKey)?;
         self.app_data
             .get(&self.app, &key)
