@@ -171,12 +171,14 @@ pub(super) async fn run(
 ///
 /// # On `Phase::Spawn`
 ///
-/// Two different things carry the spawn phase, and only one of them is
-/// unreachable here. `DeadlineExceeded { phase: Spawn }` **is** reachable and
-/// is a conformance requirement (R2.5): `spawn` in `mod.rs` wraps compilation
-/// in a wall-clock timeout and returns it directly when the caller's cold-start
-/// deadline is already spent or runs out. Every backend owes that, and the
-/// conformance suite exercises it with a zero-length deadline.
+/// #55 added the `phase` argument and its note characterised a spawn-phase
+/// deadline as unreachable. That holds only for the path *through this
+/// function*, not for the spawn phase as a whole: `DeadlineExceeded { phase:
+/// Spawn }` **is** reachable and is a conformance requirement (R2.5). `spawn`
+/// in `mod.rs` wraps compilation in a wall-clock timeout and returns it
+/// directly when the caller's cold-start deadline is already spent or runs
+/// out. Every backend owes that, and the conformance suite exercises it with a
+/// zero-length deadline.
 ///
 /// What is unreachable is the path *through this function*: an epoch interrupt
 /// during instantiation, classified with `Phase::Spawn`. Instantiation runs no
