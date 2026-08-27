@@ -34,11 +34,16 @@ because it simply never calls the new one. It is **breaking for hosts**, which
 must now implement it or fail to link. Both sides read this file, and
 "additive" quietly means two different things depending on which side you are.
 
-A change that is additive for guests and breaking for hosts still needs a
-version bump if any host outside this repository implements the interface.
-Within this repository the wasm backend is the only host, so such a change can
-land in one commit — but the moment the platform implements one of these
-directly, that stops being true.
+The rule is unconditional: **adding a function is always breaking for hosts**,
+regardless of how many hosts there happen to be. Count them for scheduling, not
+for permission — a rule that holds because of a fact is a rule that stops
+holding when the fact changes.
+
+For context on the current count, not as a reason: the wasm backend is one
+host, and the microVM backend will be a second, since its guest agent serves
+the same named WIT surface over loopback. A guest-additive change is therefore
+host-breaking for two implementations inside this repository before the
+platform implements one at all.
 
 ## Vendored
 
