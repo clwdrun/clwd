@@ -156,9 +156,13 @@ pub enum FixtureKind {
 
 /// Every caller one instance was handed to, as recorded by a backend arm.
 ///
-/// A plain struct on purpose: every arm — including the microVM arm #21 builds
-/// — constructs these from its own recording decorator, so the fields are the
-/// contract.
+/// **Deliberately exhaustive, unlike the `#[non_exhaustive]` public types.**
+/// #53 marks growable structs that callers only *read* so a new field cannot
+/// break a tag-pinned consumer. This one is the opposite case: every arm —
+/// including the microVM arm #21 builds — *constructs* it from its own
+/// recording decorator, so the fields are the contract and a change here is
+/// meant to break implementors until they account for it. It is also test-only
+/// and behind the `conformance` feature, so no released consumer sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstanceObservation {
     pub instance: InstanceId,
