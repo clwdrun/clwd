@@ -30,15 +30,20 @@ use clwd_runtime::{
 const GUEST: &[u8] = include_bytes!("../fixtures/app.wasm");
 
 /// A real bundle wrapping the reference guest, with the manifest shaped by
-/// `world` (declared secrets, sealed limits).
-fn guest_bundle(world: &WorldSpec) -> (BundleRef, Vec<u8>) {
+/// `world` (declared secrets, sealed limits). `marker`, when set, is added as a
+/// declared secret name the guest never reads — it changes the manifest, and so
+/// the digest, without changing behaviour, which is how `Guest2` becomes a
+/// distinct app.
+fn guest_bundle(world: &WorldSpec, marker: Option<&str>) -> (BundleRef, Vec<u8>) {
+    let mut secrets = world.declared_secrets.clone();
+    secrets.extend(marker.map(str::to_owned));
     let encoded = build(
         Runtime::Wasm,
         "app.wasm",
         Capabilities {
             version: 1,
             egress: Vec::new(),
-            secrets: world.declared_secrets.clone(),
+            secrets,
             storage_namespaces: Vec::new(),
             limits: Limits {
                 cpu_ms: world.cpu_ms,
@@ -66,7 +71,7 @@ fn ingest_failure_bundle() -> (BundleRef, Vec<u8>) {
 /// A well-formed bundle with one member content byte flipped, so the member no
 /// longer matches its declared digest.
 fn tampered_bundle() -> (BundleRef, Vec<u8>) {
-    let (_, mut bytes) = guest_bundle(&WorldSpec::defaults());
+    let (_, mut bytes) = guest_bundle(&WorldSpec::defaults(), None);
     bytes[512] ^= 0xff; // first content byte of the first member
     let digest = BundleRef::of_stream(&bytes);
     (digest, bytes)
@@ -77,6 +82,7 @@ struct Built {
     sandbox: Arc<WasmSandbox>,
     seen: Arc<Mutex<Vec<InstanceObservation>>>,
     guest: (BundleRef, Vec<u8>),
+    guest2: (BundleRef, Vec<u8>),
     ingest_failure: (BundleRef, Vec<u8>),
     tampered: (BundleRef, Vec<u8>),
 }
@@ -108,12 +114,13 @@ impl BackendUnderTest for WasmArm {
     }
 
     async fn sandbox(&self, world: &WorldSpec) -> Box<dyn Sandbox> {
-        let guest = guest_bundle(world);
+        let guest = guest_bundle(world, None);
+        let guest2 = guest_bundle(world, Some("_guest2_marker"));
         let ingest_failure = ingest_failure_bundle();
         let tampered = tampered_bundle();
 
         let bundles = MemoryBundleStore::new();
-        for (digest, bytes) in [&guest, &ingest_failure, &tampered] {
+        for (digest, bytes) in [&guest, &guest2, &ingest_failure, &tampered] {
             bundles.insert(digest, bytes.clone());
         }
 
@@ -138,6 +145,7 @@ impl BackendUnderTest for WasmArm {
             sandbox: Arc::clone(&sandbox),
             seen: Arc::clone(&seen),
             guest,
+            guest2,
             ingest_failure,
             tampered,
         });
@@ -155,6 +163,7 @@ impl BackendUnderTest for WasmArm {
             .expect("call sandbox() before fixture_bundle()");
         match kind {
             FixtureKind::Guest => built.guest.clone(),
+            FixtureKind::Guest2 => built.guest2.clone(),
             FixtureKind::IngestFailure => built.ingest_failure.clone(),
             FixtureKind::Tampered => built.tampered.clone(),
             other => panic!("unknown FixtureKind {other:?}"),

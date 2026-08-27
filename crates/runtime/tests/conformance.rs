@@ -177,23 +177,47 @@ async fn r1_1() {
             continue;
         }
         let sb: Arc<dyn Sandbox> = arm.sandbox(&WorldSpec::defaults()).await.into();
-        for who in ["alice", "bob"] {
-            let h = sb
-                .spawn(guest(&*arm), user(who), SpawnOptions::default())
-                .await
-                .expect("spawns");
-            // Exercise the instance a few times: a pooling backend that aliased
-            // it to another caller would record a second caller here.
-            for _ in 0..3 {
-                call(&sb, &h, "/whoami", &at(&*arm, ID)).await;
-            }
+        let c = at(&*arm, ID);
+
+        // Two instances alive at once. Every invocation must be served as the
+        // caller its own handle was spawned for — checked from the guest's
+        // observed identity, not from what a recorder logged at spawn. A backend
+        // that resolves the target instance or its identity at invoke time (from
+        // a shared map, the last spawn, anything but the handle) crosses here.
+        let alice = sb
+            .spawn(guest(&*arm), user("alice"), SpawnOptions::default())
+            .await
+            .expect("spawns alice");
+        let bob = sb
+            .spawn(guest(&*arm), user("bob"), SpawnOptions::default())
+            .await
+            .expect("spawns bob");
+        for _ in 0..3 {
+            assert_eq!(
+                call(&sb, &alice, "/whoami", &c).await,
+                "alice",
+                "{c}an instance served a request as a caller it was not spawned for"
+            );
+            assert_eq!(
+                call(&sb, &bob, "/whoami", &c).await,
+                "bob",
+                "{c}an instance served a request as a caller it was not spawned for"
+            );
         }
-        for obs in arm.instances() {
+
+        // And the structural check: exactly one caller recorded per instance.
+        let observed = arm.instances();
+        assert_eq!(
+            observed.len(),
+            2,
+            "{c}expected two recorded instances, got {}",
+            observed.len()
+        );
+        for obs in observed {
             assert_eq!(
                 obs.callers.len(),
                 1,
-                "{}instance {} observed {:?}",
-                at(&*arm, ID),
+                "{c}instance {} observed {:?}",
                 obs.instance,
                 obs.callers
             );
@@ -627,6 +651,12 @@ async fn r3_1() {
     }
 }
 
+/// Note: a green result here can hold for a backend-specific reason. The wasm
+/// backend builds a fresh `Store` per invocation, so a crash misrouted onto
+/// another caller's instance would not persist to that caller's next call —
+/// the test would pass without the backend isolating the fault. A backend that
+/// pools long-lived instances (the microVM in #21) must isolate the fault
+/// itself and should not read a green R3.2 as proof that it does.
 #[tokio::test]
 async fn r3_2() {
     const ID: &str = "R3.2";
@@ -888,7 +918,6 @@ async fn r4_5() {
         let spin = tokio::spawn(async move {
             sb2.invoke(&hog, get("/spin"), InvokeOptions::default())
                 .await
-                .expect_err("hog is preempted")
         });
         // The unrelated caller is served correctly while the hog burns down.
         for _ in 0..5 {
@@ -899,7 +928,17 @@ async fn r4_5() {
                 at(&*arm, ID)
             );
         }
-        spin.await.expect("hog task joined");
+        let hog_err = spin
+            .await
+            .expect("hog task joined")
+            .expect_err("hog is preempted");
+        assert_eq!(
+            hog_err.code(),
+            "runtime.deadline_exceeded",
+            "{}the hog's CPU-budget preemption was reported as {:?}",
+            at(&*arm, ID),
+            hog_err.code()
+        );
     }
 }
 
@@ -926,9 +965,7 @@ async fn r4_6() {
                 .expect("spawns spinner");
             let sb2 = sb.clone();
             spinners.push(tokio::spawn(async move {
-                sb2.invoke(&h, get("/spin"), InvokeOptions::default())
-                    .await
-                    .expect_err("every spinner is preempted")
+                sb2.invoke(&h, get("/spin"), InvokeOptions::default()).await
             }));
         }
         let victim = sb
@@ -949,7 +986,17 @@ async fn r4_6() {
             started.elapsed()
         );
         for s in spinners {
-            s.await.expect("spinner joined");
+            let err = s
+                .await
+                .expect("spinner joined")
+                .expect_err("every spinner is preempted");
+            assert_eq!(
+                err.code(),
+                "runtime.deadline_exceeded",
+                "{}a spinner's preemption was reported as {:?}",
+                at(&*arm, ID),
+                err.code()
+            );
         }
     }
 }
@@ -1139,32 +1186,27 @@ async fn r6_4() {
         if skipped(&*arm, ID) {
             continue;
         }
-        // Two apps: distinct bundles (different declared secrets => different
-        // digests => different app ids), same sandbox.
-        let mut wa = WorldSpec::defaults();
-        wa.declared_secrets = vec!["a".into()];
-        let mut wb = WorldSpec::defaults();
-        wb.declared_secrets = vec!["b".into()];
-        let sb_a: Arc<dyn Sandbox> = arm.sandbox(&wa).await.into();
-        let a_digest = arm.fixture_bundle(FixtureKind::Guest).0;
-        let sb_b: Arc<dyn Sandbox> = arm.sandbox(&wb).await.into();
-        let b_digest = arm.fixture_bundle(FixtureKind::Guest).0;
-        assert_ne!(a_digest, b_digest, "the two apps must be distinct bundles");
+        // Two apps in ONE sandbox, so the store must key by app id — not merely
+        // two sandboxes that never shared a store to begin with.
+        let sb: Arc<dyn Sandbox> = arm.sandbox(&WorldSpec::defaults()).await.into();
+        let app_a = arm.fixture_bundle(FixtureKind::Guest).0;
+        let app_b = arm.fixture_bundle(FixtureKind::Guest2).0;
+        assert_ne!(app_a, app_b, "the two apps must be distinct bundles");
 
-        let ha = sb_a
-            .spawn(a_digest, user("alice"), SpawnOptions::default())
+        let ha = sb
+            .spawn(app_a, user("alice"), SpawnOptions::default())
             .await
             .expect("spawns in app a");
-        let hb = sb_b
-            .spawn(b_digest, user("alice"), SpawnOptions::default())
+        let hb = sb
+            .spawn(app_b, user("alice"), SpawnOptions::default())
             .await
             .expect("spawns in app b");
         let c = at(&*arm, ID);
-        assert_eq!(call(&sb_a, &ha, "/data/set/k/in-a", &c).await, "stored");
+        assert_eq!(call(&sb, &ha, "/data/set/k/in-a", &c).await, "stored");
         assert_eq!(
-            call(&sb_b, &hb, "/data/get/k", &c).await,
+            call(&sb, &hb, "/data/get/k", &c).await,
             "absent",
-            "{c}a key set in one app must not be visible in another"
+            "{c}a key set in one app is visible in another sharing the store"
         );
     }
 }

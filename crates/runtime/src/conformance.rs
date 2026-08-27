@@ -145,6 +145,11 @@ impl Default for WorldSpec {
 pub enum FixtureKind {
     /// The reference guest specified by `tests/conformance/FIXTURE.md`.
     Guest,
+    /// The same reference guest under a cosmetically different manifest, so it
+    /// resolves to a *different* app in the *same* store. `R6.4` (two apps have
+    /// separate namespaces) needs both guests live in one sandbox to test that
+    /// the store keys by app, not merely that two sandboxes do not share.
+    Guest2,
     /// Bytes that fail `clwd-bundle` ingest validation outright (e.g. not a
     /// tar stream, or a missing manifest). For `R2.4`.
     IngestFailure,
