@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use clwd_bundle::BundleRef;
-use tokio::sync::{Mutex, OnceCell};
+use parking_lot::Mutex;
+use tokio::sync::OnceCell;
 use wasmtime::component::{Component, Linker};
 use wasmtime::Engine;
 use wasmtime_wasi_http::p2::bindings::ProxyPre;
@@ -70,6 +71,13 @@ struct State {
     /// once. The cell is cloned out and awaited *after* the lock is released:
     /// holding a lock across a ~90ms compile would serialize every spawn in the
     /// process, and not sharing the cell would duplicate the work.
+    ///
+    /// That ordering is now **enforced, not requested**. `state` is a
+    /// `parking_lot::Mutex`, whose guard is `!Send`, so holding one across the
+    /// `.await` below makes this future non-`Send` and fails to compile against
+    /// the `Send` bound `#[async_trait]` puts on `Sandbox`. The comment above
+    /// used to be the only thing standing between a reader and a change that
+    /// silently serialized every spawn.
     in_flight: HashMap<String, Arc<OnceCell<(Prepared, usize)>>>,
     bytes: usize,
     tick: u64,
@@ -100,8 +108,8 @@ impl ComponentCache {
 
     /// How many entries are resident. Tests assert on this rather than on
     /// timing, which would be a proxy for the thing they mean.
-    pub(super) async fn len(&self) -> usize {
-        self.state.lock().await.entries.len()
+    pub(super) fn len(&self) -> usize {
+        self.state.lock().entries.len()
     }
 
     /// The resident component for `bundle`, if there is one.
@@ -110,8 +118,8 @@ impl ComponentCache {
     /// Resolving means decoding the bundle, which re-verifies every member's
     /// BLAKE3 — work proportional to bundle size, on every request, for an
     /// artifact that was already validated at spawn.
-    pub(super) async fn get(&self, bundle: &BundleRef) -> Option<Prepared> {
-        let mut state = self.state.lock().await;
+    pub(super) fn get(&self, bundle: &BundleRef) -> Option<Prepared> {
+        let mut state = self.state.lock();
         state.tick += 1;
         let tick = state.tick;
         let entry = state.entries.get_mut(&bundle.to_string())?;
@@ -134,7 +142,7 @@ impl ComponentCache {
 
         // Fast path: resident.
         {
-            let mut state = self.state.lock().await;
+            let mut state = self.state.lock();
             state.tick += 1;
             let tick = state.tick;
             if let Some(entry) = state.entries.get_mut(&key) {
@@ -146,7 +154,7 @@ impl ComponentCache {
         // Slow path: single-flight. Take or create the cell under a short lock,
         // then release it before awaiting.
         let cell = {
-            let mut state = self.state.lock().await;
+            let mut state = self.state.lock();
             if let Some(entry) = state.entries.get(&key) {
                 return Ok(entry.prepared.clone());
             }
@@ -188,13 +196,13 @@ impl ComponentCache {
             .await?
             .clone();
 
-        self.insert(key, prepared.clone()).await;
+        self.insert(key, prepared.clone());
         Ok(prepared.0)
     }
 
-    async fn insert(&self, key: String, entry: (Prepared, usize)) {
+    fn insert(&self, key: String, entry: (Prepared, usize)) {
         let (prepared, size) = entry;
-        let mut state = self.state.lock().await;
+        let mut state = self.state.lock();
         state.in_flight.remove(&key);
         state.tick += 1;
         let used = state.tick;

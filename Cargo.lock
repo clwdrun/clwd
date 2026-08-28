@@ -553,6 +553,7 @@ dependencies = [
  "hyperlocal",
  "landlock",
  "nix 0.31.3",
+ "parking_lot",
  "rtnetlink",
  "seccompiler",
  "serde",

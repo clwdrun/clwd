@@ -7,7 +7,9 @@
 
 use std::collections::VecDeque;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 use std::task::{Context, Poll};
 
 use bytes::Bytes;
@@ -53,7 +55,7 @@ impl LogSink {
 
     /// Take everything captured, as `LogLine`s belonging to `request`.
     pub(super) fn drain(&self, request: Option<&RequestId>) -> Vec<LogLine> {
-        let mut buffer = self.buffer.lock().expect("not poisoned");
+        let mut buffer = self.buffer.lock();
         let mut out: Vec<LogLine> = Vec::with_capacity(buffer.lines.len() + 1);
 
         for text in buffer.lines.drain(..) {
@@ -105,7 +107,7 @@ impl StdoutStream for LogSink {
 
 impl OutputStream for LogSink {
     fn write(&mut self, bytes: Bytes) -> Result<(), StreamError> {
-        let mut buffer = self.buffer.lock().expect("not poisoned");
+        let mut buffer = self.buffer.lock();
         let used: usize =
             buffer.partial.len() + buffer.lines.iter().map(String::len).sum::<usize>();
         if used + bytes.len() > SINK_CAPACITY {
@@ -177,7 +179,7 @@ impl InstanceLogs {
     /// Record lines and fan them out. A subscriber whose channel is full loses
     /// lines; the guest is never slowed down by a slow reader.
     pub(super) fn publish(&self, lines: Vec<LogLine>) {
-        let mut state = self.inner.lock().expect("not poisoned");
+        let mut state = self.inner.lock();
         for line in lines {
             state.subscribers.retain(|tx| !tx.is_closed());
             for tx in &state.subscribers {
@@ -193,7 +195,7 @@ impl InstanceLogs {
     /// A stream of what has been logged so far, then whatever follows.
     pub(super) fn subscribe(&self) -> LogSubscription {
         let (tx, rx) = mpsc::channel(SUBSCRIBER_DEPTH);
-        let mut state = self.inner.lock().expect("not poisoned");
+        let mut state = self.inner.lock();
         for line in state.history.iter().take(SUBSCRIBER_DEPTH) {
             let _ = tx.try_send(line.clone());
         }
