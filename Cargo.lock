@@ -553,9 +553,12 @@ dependencies = [
  "hyperlocal",
  "landlock",
  "nix 0.31.3",
+ "postcard",
  "rtnetlink",
+ "rustix",
  "seccompiler",
  "serde",
+ "socket2",
  "thiserror 2.0.20",
  "tokio",
  "tokio-vsock",
@@ -564,6 +567,7 @@ dependencies = [
  "wasmtime",
  "wasmtime-wasi",
  "wasmtime-wasi-http",
+ "zerocopy",
 ]
 
 [[package]]
