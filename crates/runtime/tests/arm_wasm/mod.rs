@@ -10,7 +10,9 @@
 //! fresh arm for every test. `fixture_bundle`/`instances`/`evict` read what
 //! that call stashed and panic if it has not happened yet.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use async_trait::async_trait;
 use clwd_bundle::{build, BundleRef, Capabilities, File, Limits, Runtime};
@@ -98,8 +100,8 @@ impl WasmArm {
         }
     }
 
-    fn get(&self) -> std::sync::MutexGuard<'_, Option<Built>> {
-        self.built.lock().expect("not poisoned")
+    fn get(&self) -> parking_lot::MutexGuard<'_, Option<Built>> {
+        self.built.lock()
     }
 }
 
@@ -180,7 +182,7 @@ impl BackendUnderTest for WasmArm {
                     .seen,
             )
         };
-        let observations = seen.lock().expect("not poisoned");
+        let observations = seen.lock();
         observations.clone()
     }
 
@@ -217,13 +219,10 @@ impl Sandbox for RecordingSandbox {
     ) -> Result<Handle> {
         let caller = ctx.caller.clone();
         let handle = self.inner.spawn(bundle, ctx, opts).await?;
-        self.seen
-            .lock()
-            .expect("not poisoned")
-            .push(InstanceObservation {
-                instance: handle.instance().clone(),
-                callers: vec![caller],
-            });
+        self.seen.lock().push(InstanceObservation {
+            instance: handle.instance().clone(),
+            callers: vec![caller],
+        });
         Ok(handle)
     }
 

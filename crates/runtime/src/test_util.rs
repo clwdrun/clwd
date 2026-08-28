@@ -13,9 +13,9 @@
 //! #20 builds its conformance suite on this rather than replacing it — the
 //! builder is the extension point and the recorder is the observation point.
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::pin::Pin;
-use std::sync::Mutex;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -89,7 +89,7 @@ impl TestSandbox {
 
     /// Every instance this backend has spawned, in order.
     pub fn instances(&self) -> Vec<InstanceRecord> {
-        self.state.lock().expect("not poisoned").instances.clone()
+        self.state.lock().instances.clone()
     }
 
     fn record_mut<'a>(state: &'a mut State, id: &InstanceId) -> Option<&'a mut InstanceRecord> {
@@ -180,7 +180,7 @@ impl Sandbox for TestSandbox {
         ctx: IdentityCtx,
         opts: SpawnOptions,
     ) -> Result<Handle> {
-        let mut state = self.state.lock().expect("not poisoned");
+        let mut state = self.state.lock();
 
         let bytes = state
             .artifacts
@@ -212,7 +212,7 @@ impl Sandbox for TestSandbox {
     }
 
     async fn invoke(&self, handle: &Handle, req: Request, opts: InvokeOptions) -> Result<Response> {
-        let mut state = self.state.lock().expect("not poisoned");
+        let mut state = self.state.lock();
 
         let cost = state.invoke_cost;
         let limit = state.die_after_invokes;
@@ -237,7 +237,7 @@ impl Sandbox for TestSandbox {
     }
 
     async fn logs_stream(&self, handle: &Handle) -> Result<LogStream> {
-        let state = self.state.lock().expect("not poisoned");
+        let state = self.state.lock();
         let live = state
             .instances
             .iter()
@@ -249,7 +249,7 @@ impl Sandbox for TestSandbox {
     }
 
     async fn stop(&self, handle: Handle) -> Result<()> {
-        let mut state = self.state.lock().expect("not poisoned");
+        let mut state = self.state.lock();
         if let Some(record) = Self::record_mut(&mut state, handle.instance()) {
             record.stopped = true;
         }

@@ -29,6 +29,11 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 async-trait = "0.1"
+# Already in the tree via tokio, so a direct dependency adds nothing to the
+# graph. Taken for the guard's type, not its speed: `parking_lot::MutexGuard`
+# is `!Send`, so holding one across an `.await` in an `#[async_trait]` method
+# is a compile error rather than a comment asking nobody to do it.
+parking_lot = "0.12"
 
 # clwd-cli
 # Terminal-drawing features (color, suggestions) are off here and added back
