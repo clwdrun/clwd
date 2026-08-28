@@ -1,7 +1,8 @@
-# CLAUDE.md — clwd
+# Development notes — clwd
 
-clwd, a cloud for small software. Apache-2.0. Contains the
-sandbox runtime, CLI, SDK, and templates.
+Architecture, build commands, and the rules that keep the workspace honest.
+clwd is a cloud for small software (Apache-2.0): the sandbox runtime, CLI, SDK,
+and templates.
 
 ## Commands
 
@@ -25,10 +26,15 @@ use a Linux VM.
 
 | Crate | Role |
 | --- | --- |
-| `clwd-cli` | binary `clwd`: deploy, logs, share, secrets |
+| `clwd-cli` | binary `clwd`: `init`, `run`, `dev`, `build`, `publish`, `logs`, `secrets`, `mcp` |
 | `clwd-sdk` | what app code links against; WIT bindings |
 | `clwd-runtime` | the `Sandbox` trait + `wasm` and `microvm` backends |
-| `clwd-agent` | musl init that runs inside the microVM |
+| `clwd-agent` | musl init (PID 1) that runs *inside* the microVM guest |
+
+"Agent" is overloaded in this repo. `clwd-agent` is the in-guest init process —
+unrelated to the AI agents that generate app code (`templates/`, `wit/`, the
+untrusted-code assumption below) and unrelated to the platform repo's "Agent
+Surface" phase. When either sense is not obvious from context, say which.
 
 ## Architectural rules
 
