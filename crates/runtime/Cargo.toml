@@ -11,6 +11,10 @@ default = []
 # A scripted backend for exercising the lifecycle with no wasmtime and no KVM.
 # #20 builds its conformance suite on this rather than replacing it.
 test-util = []
+# The backend conformance suite's harness surface (`conformance` module). Pulls
+# no dependencies: it is the trait plus the requirement list. The suite tests
+# themselves also need `wasm` (and later `microvm`) for the backend arms.
+conformance = []
 wasm = [
   "dep:wasmtime",
   "dep:wasmtime-wasi",

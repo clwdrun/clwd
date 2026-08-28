@@ -200,6 +200,20 @@ impl WasmSandbox {
         self.cache.compilations()
     }
 
+    /// Test seam (`feature = "conformance"`): make the instance behind `id`
+    /// report `runtime.stopped` on its next invoke, without a `Handle`.
+    ///
+    /// The conformance suite drives R2.1/R2.2 — an invoke after the instance is
+    /// gone — while still holding a live handle to invoke with. Production
+    /// teardown is [`Sandbox::stop`], which consumes the handle, so this path
+    /// is unreachable there and not part of the public surface.
+    #[cfg(feature = "conformance")]
+    pub async fn evict(&self, id: &InstanceId) {
+        if let Some(instance) = self.instances.lock().await.get_mut(id) {
+            instance.stopped = true;
+        }
+    }
+
     /// Resolve a digest to the bytes of the component to run.
     ///
     /// **Do not inline this at the call sites.** It is one function because it

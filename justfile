@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: fmt-check clippy test test-wasm lib-silent lib-bare spec-intact bundle-deps trait-deps wasm-contained deny
+check: fmt-check clippy test test-wasm test-conformance lib-silent lib-bare spec-intact bundle-deps trait-deps wasm-contained deny
 
 fmt:
     cargo fmt --all
@@ -29,6 +29,13 @@ test:
 # than no gate.
 test-wasm:
     cargo test -p clwd-runtime --features wasm
+
+# The backend conformance suite is behind its own non-default `conformance`
+# feature and also needs `wasm` for the only arm that exists. Neither
+# `cargo test --workspace` nor `test-wasm` reaches it. Runs in CI's `backends`
+# job alongside `test-wasm`, not the `gate` job (which builds no backend).
+test-conformance:
+    cargo test -p clwd-runtime --features conformance,wasm --test conformance
 
 deny:
     cargo deny check --hide-inclusion-graph
