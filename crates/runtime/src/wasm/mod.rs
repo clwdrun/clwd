@@ -61,7 +61,7 @@ use crate::logs::LogStream;
 use crate::Sandbox;
 use async_trait::async_trait;
 use clwd_bundle::BundleRef;
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 use budget::Budget;
 use cache::ComponentCache;
@@ -84,7 +84,7 @@ pub trait BundleStore: Send + Sync {
 /// An in-memory store, for tests and for a host that already holds its bytes.
 #[derive(Debug, Default)]
 pub struct MemoryBundleStore {
-    artifacts: std::sync::Mutex<HashMap<String, Vec<u8>>>,
+    artifacts: Mutex<HashMap<String, Vec<u8>>>,
 }
 
 impl MemoryBundleStore {
@@ -93,10 +93,7 @@ impl MemoryBundleStore {
     }
 
     pub fn insert(&self, bundle: &BundleRef, bytes: Vec<u8>) {
-        self.artifacts
-            .lock()
-            .expect("not poisoned")
-            .insert(bundle.to_string(), bytes);
+        self.artifacts.lock().insert(bundle.to_string(), bytes);
     }
 }
 
@@ -105,7 +102,6 @@ impl BundleStore for MemoryBundleStore {
     async fn fetch(&self, bundle: &BundleRef) -> Result<Vec<u8>> {
         self.artifacts
             .lock()
-            .expect("not poisoned")
             .get(&bundle.to_string())
             .cloned()
             .ok_or(Error::BundleNotFound { bundle: *bundle })
@@ -187,7 +183,7 @@ impl WasmSandbox {
     /// Resident compiled components. Tests assert on this instead of inferring
     /// cache behaviour from timing.
     pub async fn cached_components(&self) -> usize {
-        self.cache.len().await
+        self.cache.len()
     }
 
     /// How many times a component has actually been compiled.
@@ -209,7 +205,7 @@ impl WasmSandbox {
     /// is unreachable there and not part of the public surface.
     #[cfg(feature = "conformance")]
     pub async fn evict(&self, id: &InstanceId) {
-        if let Some(instance) = self.instances.lock().await.get_mut(id) {
+        if let Some(instance) = self.instances.lock().get_mut(id) {
             instance.stopped = true;
         }
     }
@@ -299,7 +295,7 @@ impl Sandbox for WasmSandbox {
             self.next_id
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
-        self.instances.lock().await.insert(
+        self.instances.lock().insert(
             id.clone(),
             Instance {
                 bundle,
@@ -315,7 +311,7 @@ impl Sandbox for WasmSandbox {
 
     async fn invoke(&self, handle: &Handle, req: Request, opts: InvokeOptions) -> Result<Response> {
         let (bundle, budget, app, secrets, logs) = {
-            let instances = self.instances.lock().await;
+            let instances = self.instances.lock();
             let instance = instances
                 .get(handle.instance())
                 .filter(|i| !i.stopped)
@@ -344,7 +340,7 @@ impl Sandbox for WasmSandbox {
         // resolve bytes on a miss — resolving decodes the bundle, which
         // re-verifies every member digest, and repeating that per request costs
         // time proportional to bundle size for an artifact already validated.
-        let component = match self.cache.get(&bundle).await {
+        let component = match self.cache.get(&bundle) {
             Some(prepared) => prepared,
             None => {
                 let (bytes, _, _) = self.entrypoint(&bundle).await?;
@@ -379,7 +375,7 @@ impl Sandbox for WasmSandbox {
     }
 
     async fn logs_stream(&self, handle: &Handle) -> Result<LogStream> {
-        let instances = self.instances.lock().await;
+        let instances = self.instances.lock();
         let instance = instances
             .get(handle.instance())
             .filter(|i| !i.stopped)
@@ -388,7 +384,7 @@ impl Sandbox for WasmSandbox {
     }
 
     async fn stop(&self, handle: Handle) -> Result<()> {
-        if let Some(instance) = self.instances.lock().await.get_mut(handle.instance()) {
+        if let Some(instance) = self.instances.lock().get_mut(handle.instance()) {
             instance.stopped = true;
         }
         Ok(())

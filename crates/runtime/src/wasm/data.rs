@@ -9,8 +9,8 @@
 //! The only identifiers are [`clwd_bundle::BundleRef`], which is ours, and
 //! [`AppId`], which an implementation produces.
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 use async_trait::async_trait;
 use clwd_bundle::BundleRef;
@@ -127,7 +127,6 @@ impl MemorySecretStore {
     pub fn insert(&self, app: &AppId, name: &str, value: impl Into<Vec<u8>>) {
         self.secrets
             .lock()
-            .expect("not poisoned")
             .insert((app.as_str().to_owned(), name.to_owned()), value.into());
     }
 }
@@ -135,7 +134,7 @@ impl MemorySecretStore {
 #[async_trait]
 impl SecretStore for MemorySecretStore {
     async fn resolve(&self, app: &AppId, names: &[String]) -> Result<Vec<(String, Vec<u8>)>> {
-        let secrets = self.secrets.lock().expect("not poisoned");
+        let secrets = self.secrets.lock();
         // Only what was asked for AND is held: a declared name this store will
         // not authorise yields nothing rather than an error, so a manifest can
         // narrow the set but never widen it.
@@ -169,11 +168,7 @@ impl MemoryAppDataStore {
     /// How many keys `app` currently holds. For tests asserting that one app's
     /// namespace is untouched by another's writes.
     pub fn len(&self, app: &AppId) -> usize {
-        self.data
-            .lock()
-            .expect("not poisoned")
-            .get(app)
-            .map_or(0, HashMap::len)
+        self.data.lock().get(app).map_or(0, HashMap::len)
     }
 
     pub fn is_empty(&self, app: &AppId) -> bool {
@@ -187,7 +182,6 @@ impl AppDataStore for MemoryAppDataStore {
         Ok(self
             .data
             .lock()
-            .expect("not poisoned")
             .get(app)
             .and_then(|keys| keys.get(key))
             .cloned())
@@ -196,7 +190,6 @@ impl AppDataStore for MemoryAppDataStore {
     async fn set(&self, app: &AppId, key: &str, value: Vec<u8>) -> Result<()> {
         self.data
             .lock()
-            .expect("not poisoned")
             .entry(app.clone())
             .or_default()
             .insert(key.to_owned(), value);
@@ -205,7 +198,7 @@ impl AppDataStore for MemoryAppDataStore {
 
     async fn delete(&self, app: &AppId, key: &str) -> Result<()> {
         // Idempotent, per the interface: removing what is not there succeeds.
-        if let Some(keys) = self.data.lock().expect("not poisoned").get_mut(app) {
+        if let Some(keys) = self.data.lock().get_mut(app) {
             keys.remove(key);
         }
         Ok(())

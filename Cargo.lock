@@ -553,7 +553,6 @@ dependencies = [
  "hyperlocal",
  "landlock",
  "nix 0.31.3",
- "postcard",
  "rtnetlink",
  "rustix",
  "seccompiler",
