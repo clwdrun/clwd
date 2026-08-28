@@ -20,30 +20,61 @@ use std::time::Duration;
 use futures_core::Stream;
 
 use clwd_runtime::conformance::{
-    requirement, BackendUnderTest, FixtureKind, WorldSpec, REQUIREMENTS,
+    requirement, BackendUnderTest, FixtureKind, InstanceObservation, WorldSpec, REQUIREMENTS,
 };
+use clwd_runtime::handle::InstanceId;
 use clwd_runtime::identity::{Caller, GroupId, IdentityCtx, OrgId, Principal, Role, SubjectId};
 use clwd_runtime::{
-    Body, Deadline, Error, InvokeOptions, LogLine, LogStream, Request, RequestId, Sandbox,
-    SpawnOptions,
+    Body, BundleRef, Deadline, Error, InvokeOptions, LogLine, LogStream, Request, RequestId,
+    Sandbox, SpawnOptions,
 };
 
 mod arm_wasm;
 
-/// Every backend arm the suite knows about. Unbuilt arms still appear here and
-/// report every requirement as skipped.
+/// Every backend arm the suite knows about. An arm whose `available()` is
+/// `false` still appears here and reports every requirement as skipped, never
+/// as passed — so a second, unproven backend is loud in `cargo test` output
+/// rather than an invisible gap.
 fn arms() -> Vec<Box<dyn BackendUnderTest>> {
-    vec![Box::new(arm_wasm::WasmArm::new())]
+    vec![Box::new(arm_wasm::WasmArm::new()), Box::new(MicroVmArm)]
 }
 
-/// Skip line for an arm that is not built in this binary. Returns `true` when
-/// the caller should `continue` past this arm.
+/// The microVM arm, until #21 builds the Firecracker backend. `available()` is
+/// `false`, so the suite emits a `SKIP … [microvm]` line for every requirement
+/// and never calls any other method. #21 replaces this with a real recording
+/// decorator — turning off a skip, not writing tests.
+struct MicroVmArm;
+
+#[async_trait::async_trait]
+impl BackendUnderTest for MicroVmArm {
+    fn name(&self) -> &'static str {
+        "microvm"
+    }
+    fn available(&self) -> bool {
+        false
+    }
+    async fn sandbox(&self, _world: &WorldSpec) -> Box<dyn Sandbox> {
+        unreachable!("the microvm arm is unavailable; the suite must skip it")
+    }
+    fn fixture_bundle(&self, _kind: FixtureKind) -> (BundleRef, Vec<u8>) {
+        unreachable!("the microvm arm is unavailable")
+    }
+    fn instances(&self) -> Vec<InstanceObservation> {
+        unreachable!("the microvm arm is unavailable")
+    }
+    async fn evict(&self, _id: &InstanceId) {
+        unreachable!("the microvm arm is unavailable")
+    }
+}
+
+/// Skip line for an arm that is not available in this build. Returns `true`
+/// when the caller should `continue` past this arm.
 fn skipped(arm: &dyn BackendUnderTest, id: &str) -> bool {
     if arm.available() {
         return false;
     }
     eprintln!(
-        "SKIP  {id}  [{}]  (arm not built)  — {}",
+        "SKIP  {id}  [{}]  (unavailable)  — {}",
         arm.name(),
         requirement(id).summary
     );
@@ -162,6 +193,21 @@ fn every_requirement_has_exactly_one_test() {
     assert!(
         stale.is_empty(),
         "tests naming an unknown requirement: {stale:?}"
+    );
+}
+
+/// A standing, visible line in every `cargo test` run: the microVM backend has
+/// no conformance arm yet, so none of the requirements are proven against it.
+/// The per-test loop already skips the unavailable arm, but a passing run
+/// captures that `eprintln!`; an `#[ignore]` shows in the default summary. #21
+/// deletes this the moment `MicroVmArm::available()` returns `true`.
+#[test]
+#[ignore = "#21: microvm backend unimplemented — 0 of the conformance requirements are proven against it"]
+fn microvm_backend_is_unproven() {
+    let micro = MicroVmArm;
+    assert!(
+        !micro.available(),
+        "MicroVmArm now reports available — delete this marker and let the suite run against it"
     );
 }
 
