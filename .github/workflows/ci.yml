@@ -185,6 +185,14 @@ jobs:
         if: matrix.feature == 'wasm'
         run: cargo test -p clwd-runtime --features wasm
 
+      # The backend conformance suite sits behind its own `conformance` feature
+      # on top of `wasm`; the step above enables only `wasm`, so it never runs
+      # the suite. Without this, the spec the suite encodes rots the way the
+      # microVM arm's UNPROVEN line is meant to be a visible reminder against.
+      - name: conformance suite
+        if: matrix.feature == 'wasm'
+        run: cargo test -p clwd-runtime --features conformance,wasm --test conformance
+
   guest:
     runs-on: ubuntu-latest
     steps:
