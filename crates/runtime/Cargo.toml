@@ -30,6 +30,15 @@ microvm = [
   "dep:seccompiler",
   "dep:landlock",
   "dep:nix",
+  # Declared ahead of #21/#22/#23 so the driver, the agent protocol and the
+  # jailer work add code rather than dependencies. Gated with the rest of the
+  # backend: none of these may reach the `Sandbox` trait surface, which the
+  # `trait-deps` gate asserts with no features on. All four are already in the
+  # tree transitively, so this adds no crate to `Cargo.lock`.
+  "dep:rustix",
+  "dep:socket2",
+  "dep:postcard",
+  "dep:zerocopy",
 ]
 
 [dependencies]
@@ -56,6 +65,10 @@ rtnetlink = { workspace = true, optional = true }
 seccompiler = { workspace = true, optional = true }
 landlock = { workspace = true, optional = true }
 nix = { workspace = true, optional = true }
+rustix = { workspace = true, optional = true }
+socket2 = { workspace = true, optional = true }
+postcard = { workspace = true, optional = true }
+zerocopy = { workspace = true, optional = true }
 
 [dev-dependencies]
 trybuild = "1"
