@@ -23,7 +23,32 @@ jobs:
   gate:
     runs-on: ubuntu-latest
     steps:
+      # Full history: the secret scan below walks every commit, and a shallow
+      # clone would silently scan almost nothing.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # First, because it is seconds and a leaked credential invalidates
+      # everything downstream. GitHub's own secret scanning and push protection
+      # are Advanced Security features, unavailable on a private repository, so
+      # this replaces them.
+      #
+      # Installed from the release tarball rather than via gitleaks-action,
+      # which requires a paid licence key on organization accounts. A pinned
+      # binary is also less supply chain than a third-party action, and runs
+      # the identical command `just secrets` runs locally.
+      - name: install gitleaks
+        run: |
+          GL=8.28.0
+          curl -sSL -o /tmp/gl.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GL}/gitleaks_${GL}_linux_x64.tar.gz"
+          tar xzf /tmp/gl.tar.gz -C /tmp gitleaks
+          sudo install /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: secrets
+        run: gitleaks detect --no-banner --redact --exit-code 1
 
       # rustup honours rust-toolchain.toml on first invocation, installing the
       # pinned version with its profile, components and targets. No third-party

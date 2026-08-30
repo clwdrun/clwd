@@ -10,7 +10,31 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: fmt-check clippy test test-wasm test-conformance lib-silent lib-bare spec-intact bundle-deps trait-deps wasm-contained deny
+check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare spec-intact bundle-deps trait-deps wasm-contained deny
+
+# Secret scan over full history. GitHub's own scanning and push protection are
+# Advanced Security features and are not available on a private repository, so
+# this replaces them. `detect` walks every commit rather than the working tree:
+# a credential already committed is the case that matters, and a clean history
+# is a precondition for this repo going public at MVP.
+#
+# Fails loudly when gitleaks is absent. A check that no-ops when its tool is
+# missing is worse than no check, because it reports green.
+secrets:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    if ! command -v gitleaks >/dev/null 2>&1; then
+      echo "error: gitleaks is not installed — install it or this gate is a lie"
+      echo "       https://github.com/gitleaks/gitleaks#installing"
+      exit 1
+    fi
+    gitleaks detect --no-banner --redact --exit-code 1
+
+# Install the pre-commit hook. Catching a credential before the commit is a
+# non-event; catching it after a push is a rotation.
+hooks:
+    git config core.hooksPath .githooks
+    @echo "ok: core.hooksPath -> .githooks"
 
 fmt:
     cargo fmt --all
