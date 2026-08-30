@@ -503,7 +503,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "clwd-agent"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "nix 0.31.3",
  "serde",
@@ -513,7 +513,7 @@ dependencies = [
 
 [[package]]
 name = "clwd-bundle"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "blake3",
  "serde",
@@ -524,7 +524,7 @@ dependencies = [
 
 [[package]]
 name = "clwd-cli"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -540,7 +540,7 @@ dependencies = [
 
 [[package]]
 name = "clwd-runtime"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -573,7 +573,7 @@ dependencies = [
 
 [[package]]
 name = "clwd-sdk"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "serde",
  "wit-bindgen",
