@@ -30,8 +30,10 @@ macro_rules! define_cli_error {
             }
         }
 
-        #[cfg(test)]
-        const DECLARED_CODES: &[&str] = &[$($code),*];
+        /// Every `cli.*` code, generated from the same input as the enum.
+        /// Public because `docs/error-codes.md` is built from it — a catalogue
+        /// only the tests can see cannot be published.
+        pub const CODES: &[&str] = &[$($code),*];
     };
 }
 
@@ -63,15 +65,30 @@ define_cli_error! {
 }
 
 impl CliError {
-    /// A short, actionable next step, when there is one worth saying.
+    /// A short, actionable next step.
+    ///
+    /// Every variant has one. In the JSON envelope this field *is* the recovery
+    /// a caller sees, and a null hint is a dead end for exactly the person least
+    /// able to work out what to do next. A variant with nothing useful to say
+    /// here is usually a variant that is too broad to be actionable at all.
+    ///
+    /// The `Option` stays in the signature rather than becoming `&'static str`:
+    /// `hint` is `null`-able in the published envelope, asserted by
+    /// `json_error_keeps_a_null_hint_rather_than_dropping_the_key`, and
+    /// narrowing the type here would make that shape unrepresentable if a
+    /// future variant genuinely has no next step.
     pub fn hint(&self) -> Option<&'static str> {
         match self {
             Self::InvalidArgument { .. } => Some("run `clwd <command> --help` for accepted values"),
-            Self::NotFound { .. } => None,
+            Self::NotFound { .. } => Some(
+                "check the name for typos, and run the matching `list` command to see what exists",
+            ),
             Self::NotImplemented { .. } => {
                 Some("track progress at https://github.com/clwdrun/clwd/issues")
             }
-            Self::Config { .. } => None,
+            Self::Config { .. } => {
+                Some("check the config file the message names; delete it to start from defaults")
+            }
             Self::Internal { .. } => Some("this is a bug in clwd; please report it"),
         }
     }
@@ -94,14 +111,14 @@ impl CliError {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
-    /// One sample per variant, written by hand. `DECLARED_CODES` is generated
+    /// One sample per variant, written by hand. `CODES` is generated
     /// from the enum definition, so the equality assertion below fails the
     /// moment a variant is added to the enum and forgotten here.
-    fn samples() -> Vec<CliError> {
+    pub(crate) fn samples() -> Vec<CliError> {
         vec![
             CliError::InvalidArgument { what: "x".into() },
             CliError::NotFound { what: "x".into() },
@@ -115,18 +132,14 @@ mod tests {
 
     #[test]
     fn codes_are_unique() {
-        let unique: BTreeSet<&str> = DECLARED_CODES.iter().copied().collect();
-        assert_eq!(
-            unique.len(),
-            DECLARED_CODES.len(),
-            "duplicate code in {DECLARED_CODES:?}"
-        );
+        let unique: BTreeSet<&str> = CODES.iter().copied().collect();
+        assert_eq!(unique.len(), CODES.len(), "duplicate code in {CODES:?}");
     }
 
     #[test]
     fn codes_are_exhaustive_over_variants() {
         let produced: BTreeSet<&str> = samples().iter().map(CliError::code).collect();
-        let declared: BTreeSet<&str> = DECLARED_CODES.iter().copied().collect();
+        let declared: BTreeSet<&str> = CODES.iter().copied().collect();
         assert_eq!(
             produced, declared,
             "a variant is missing from `samples()` or from the enum"
@@ -135,7 +148,7 @@ mod tests {
 
     #[test]
     fn codes_are_namespaced_and_lowercase() {
-        for code in DECLARED_CODES {
+        for code in CODES {
             let (ns, rest) = code
                 .split_once('.')
                 .unwrap_or_else(|| panic!("{code} is not namespaced"));

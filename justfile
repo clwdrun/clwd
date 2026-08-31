@@ -36,6 +36,13 @@ hooks:
     git config core.hooksPath .githooks
     @echo "ok: core.hooksPath -> .githooks"
 
+# Regenerate docs/error-codes.md after a deliberate code change. Staleness is
+# caught by the `docs_match_the_code` test, which `just test` already runs; this
+# is the only way to make the change.
+error-table:
+    UPDATE_ERROR_TABLE=1 cargo test -p clwd-cli --test error_table
+    @echo "ok: docs/error-codes.md regenerated — commit it with the code change"
+
 fmt:
     cargo fmt --all
 

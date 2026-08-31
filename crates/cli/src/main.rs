@@ -14,8 +14,19 @@ use clwd_cli::{commands, Cli, CliError, Command, Format, Progress};
 use futures_core::Stream;
 use serde::Serialize;
 
+/// Exit status for a usage error — a command line clap would not accept.
+///
+/// Distinct from `FAILURE` (1), which means the command ran and failed. A caller
+/// can branch on this without parsing anything: 2 means nothing was attempted.
+/// Matches the convention clap already exits with, so this pins existing
+/// behaviour rather than inventing a status.
+const USAGE: u8 = 2;
+
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => return usage_error(err),
+    };
     let format = cli.format();
 
     let outcome = {
@@ -34,6 +45,52 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Render a clap parse failure, honouring `--json`.
+///
+/// Clap writes its own prose and exits, which is right for a human and wrong for
+/// `--json`: a caller that asked for machine-readable output and got a usage
+/// paragraph has to parse English to learn what happened. `--json` is read
+/// straight from `argv` because the parse that would have told us failed —
+/// that is the whole situation.
+///
+/// `--help` and `--version` arrive here as errors too, and they are not
+/// failures: clap's own text goes to stdout and the process exits 0, in both
+/// modes. Rendering those as an error envelope would be a lie.
+fn usage_error(err: clap::Error) -> ExitCode {
+    if err.use_stderr() {
+        let json = std::env::args_os().any(|a| a == "--json");
+        if json {
+            let cli_err = CliError::InvalidArgument {
+                // Clap's rendering is multi-line and carries a usage block. One
+                // line keeps the envelope's `message` a sentence rather than a
+                // screen; the full text is what `--help` is for.
+                what: first_line(&err.render().to_string()),
+            };
+            let mut stderr = io::stderr().lock();
+            let _ = Format::Json.error(&cli_err, &mut stderr);
+            let _ = stderr.flush();
+        } else {
+            let _ = err.print();
+        }
+        return ExitCode::from(USAGE);
+    }
+
+    // `--help` / `--version`: clap's output, stdout, success.
+    let _ = err.print();
+    ExitCode::SUCCESS
+}
+
+/// The first non-empty line, with clap's `error: ` prefix removed if present.
+fn first_line(rendered: &str) -> String {
+    rendered
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("invalid command line")
+        .trim_start_matches("error: ")
+        .to_owned()
 }
 
 fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliError> {

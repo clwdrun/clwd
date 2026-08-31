@@ -77,8 +77,11 @@ macro_rules! define_error {
 
         /// Every code this crate owns. Delegated codes belong to the crate that
         /// defines them and are catalogued there.
-        #[cfg(test)]
-        pub(crate) const OWNED_CODES: &[&str] = &[$($ocode),*];
+        /// Every code this crate owns, generated from the same input as the
+        /// enum. Delegated codes belong to the crate that defines them and are
+        /// catalogued there. Public because `docs/error-codes.md` is built from
+        /// it — a catalogue only the tests can see cannot be published.
+        pub const OWNED_CODES: &[&str] = &[$($ocode),*];
     };
 }
 

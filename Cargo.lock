@@ -528,6 +528,8 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "clap",
+ "clwd-bundle",
+ "clwd-runtime",
  "futures-core",
  "indicatif",
  "keyring",

@@ -34,3 +34,13 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+# Doc generation only. `tests/error_table.rs` builds docs/error-codes.md from
+# all three code catalogues and cannot reach runtime's or bundle's otherwise.
+#
+# Dev-dependencies are excluded from `cargo tree -e normal`, which is what the
+# `cli-deps` gate inspects, so "clwd-cli must not grow a runtime backend" still
+# holds — and clwd-runtime with no features pulls no backend anyway.
+clwd-runtime = { workspace = true }
+clwd-bundle = { workspace = true }

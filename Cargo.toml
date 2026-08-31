@@ -55,6 +55,7 @@ futures-core = "0.3.34"
 
 # intra-workspace
 clwd-bundle = { version = "0.0.1", path = "crates/bundle" }
+clwd-runtime = { version = "0.0.1", path = "crates/runtime" }
 
 # clwd-runtime (trait surface — no backend required)
 http = "1"
