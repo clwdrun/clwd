@@ -104,12 +104,46 @@ mod tests {
         assert_eq!(object["retryable"], false);
     }
 
+    /// A `None` hint serializes as `null` rather than vanishing, so a consumer
+    /// can index the key unconditionally.
+    ///
+    /// The envelope is built directly here rather than from a `CliError`,
+    /// because every variant now carries a hint and none can demonstrate the
+    /// absent case. That is deliberate — a null hint is a dead end for the
+    /// reader least able to work out what to do next — but the shape must stay
+    /// guaranteed regardless: `hint` is `Option` in the published contract, the
+    /// platform mirrors it as nullable, and a future variant may legitimately
+    /// have no next step.
     #[test]
-    fn json_error_keeps_a_null_hint_rather_than_dropping_the_key() {
-        let err = CliError::NotFound { what: "app".into() };
+    fn a_none_hint_serializes_as_null_rather_than_being_dropped() {
+        let envelope = ErrorEnvelope {
+            code: "cli.example",
+            message: "an error with no hint".to_owned(),
+            hint: None,
+            retryable: false,
+        };
         let json: serde_json::Value =
-            serde_json::from_str(&render_error(Format::Json, &err)).expect("valid json");
+            serde_json::to_value(&envelope).expect("the envelope serializes");
+
+        assert!(
+            json.as_object().expect("an object").contains_key("hint"),
+            "the hint key must be present even when there is no hint"
+        );
         assert!(json["hint"].is_null(), "hint must stay present as null");
+    }
+
+    /// The counterpart: every variant that actually exists does carry a hint,
+    /// so no real error reaches a caller as a dead end.
+    #[test]
+    fn every_variant_carries_a_hint() {
+        for err in crate::error::tests::samples() {
+            assert!(
+                err.hint().is_some(),
+                "{} has no hint — in the envelope that is the only recovery a \
+                 caller sees",
+                err.code()
+            );
+        }
     }
 
     #[test]

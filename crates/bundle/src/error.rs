@@ -29,8 +29,12 @@ macro_rules! define_error {
             }
         }
 
-        #[cfg(test)]
-        pub(crate) const DECLARED_CODES: &[&str] = &[$($code),*];
+        /// Every `bundle.*` code this crate can produce, generated from the
+        /// same input as the enum. Public because the error-code table in
+        /// `docs/error-codes.md` is built from it and the platform mirrors it
+        /// across the seam; a catalogue only the tests can see cannot be
+        /// published.
+        pub const CODES: &[&str] = &[$($code),*];
     };
 }
 
@@ -175,13 +179,13 @@ mod tests {
 
     #[test]
     fn codes_are_unique() {
-        let unique: BTreeSet<&str> = DECLARED_CODES.iter().copied().collect();
-        assert_eq!(unique.len(), DECLARED_CODES.len(), "duplicate code");
+        let unique: BTreeSet<&str> = CODES.iter().copied().collect();
+        assert_eq!(unique.len(), CODES.len(), "duplicate code");
     }
 
     #[test]
     fn codes_are_namespaced_and_lowercase() {
-        for code in DECLARED_CODES {
+        for code in CODES {
             let rest = code
                 .strip_prefix("bundle.")
                 .unwrap_or_else(|| panic!("{code} is not in the bundle namespace"));
@@ -204,8 +208,7 @@ mod tests {
             })
             .map(|token| token.trim_end_matches('.').to_owned())
             .collect();
-        let implemented: BTreeSet<String> =
-            DECLARED_CODES.iter().map(|c| (*c).to_owned()).collect();
+        let implemented: BTreeSet<String> = CODES.iter().map(|c| (*c).to_owned()).collect();
 
         let missing: Vec<_> = documented.difference(&implemented).collect();
         let undocumented: Vec<_> = implemented.difference(&documented).collect();
