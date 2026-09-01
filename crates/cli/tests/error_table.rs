@@ -94,12 +94,38 @@ impl Recovery {
 }
 
 /// Whether a CLI user can hit this code today.
+///
+/// **Derived, not declared per row.** Reachability is a property of whether the
+/// CLI delegates a namespace at all, so it is one fact per namespace rather than
+/// 49 hand-kept flags. Writing it per row meant a change like #25 — which made
+/// 44 codes reachable at once — had to be applied 44 times, and the drift check
+/// cannot catch a half-finished pass: it compares the generated page against the
+/// committed one, and both come from the same hand-written data. Deriving it
+/// makes the inconsistent state unrepresentable instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Reach {
-    /// Reachable from the CLI on `main`.
+    /// Reachable from the CLI today.
     Now,
-    /// Not reachable yet. The issue that makes it reachable.
+    /// Not reachable yet, and the issue that changes that.
     Soon(&'static str),
+}
+
+impl Reach {
+    /// Reachability for a code, from its namespace.
+    ///
+    /// `cli.*` is always reachable — the CLI owns it. `runtime.*` and `bundle.*`
+    /// arrive through `CliError::Runtime`, the delegating variant behind the
+    /// `run` feature, so they are reachable exactly when a command drives the
+    /// sandbox. `clwd run` (#25) is that command.
+    fn of(code: &str) -> Self {
+        match code.split_once('.').expect("codes are namespaced").0 {
+            "cli" => Self::Now,
+            // Delegated through `CliError::Runtime`. Before #25 nothing
+            // constructed that variant, so every one of these was unreachable.
+            "runtime" | "bundle" => Self::Now,
+            other => panic!("no reachability rule for the {other:?} namespace"),
+        }
+    }
 }
 
 struct Row {
@@ -107,7 +133,6 @@ struct Row {
     meaning: &'static str,
     recovery: &'static str,
     action: Recovery,
-    reach: Reach,
 }
 
 /// One row per code. Grouped by the subsystem that decides the code, because
@@ -123,7 +148,6 @@ const TABLE: &[Row] = &[
         recovery: "Run `clwd <command> --help` to see the accepted options and values, then \
                    run the command again with the corrected one.",
         action: Recovery::FixInput,
-        reach: Reach::Now,
     },
     Row {
         code: "cli.not_found",
@@ -133,7 +157,6 @@ const TABLE: &[Row] = &[
                    deleted or belong to a different organisation than the one you are \
                    signed in to.",
         action: Recovery::FixInput,
-        reach: Reach::Now,
     },
     Row {
         code: "cli.not_implemented",
@@ -143,7 +166,6 @@ const TABLE: &[Row] = &[
         recovery: "There is nothing to fix locally. Track the command's issue at \
                    https://github.com/clwdrun/clwd/issues to see when it lands.",
         action: Recovery::ReportBug,
-        reach: Reach::Now,
     },
     Row {
         code: "cli.config",
@@ -157,7 +179,6 @@ const TABLE: &[Row] = &[
                    back to its defaults and writes a fresh one. If the message names a \
                    setting rather than a file, run `clwd init` to regenerate the config.",
         action: Recovery::FixInput,
-        reach: Reach::Now,
     },
     Row {
         code: "cli.internal",
@@ -167,7 +188,6 @@ const TABLE: &[Row] = &[
                    https://github.com/clwdrun/clwd/issues with the command that produced \
                    it.",
         action: Recovery::ReportBug,
-        reach: Reach::Now,
     },
     // ---- runtime.* — decided by clwd-runtime ----
     Row {
@@ -178,7 +198,6 @@ const TABLE: &[Row] = &[
         recovery: "Publish the app first with `clwd publish`, or check that the address \
                    came from the build you meant.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#25"),
     },
     Row {
         code: "runtime.deadline_exceeded",
@@ -189,7 +208,6 @@ const TABLE: &[Row] = &[
                    time, the app is doing too much work for its time budget — raise \
                    `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild.",
         action: Recovery::Retry,
-        reach: Reach::Soon("#25"),
     },
     Row {
         code: "runtime.stopped",
@@ -198,7 +216,6 @@ const TABLE: &[Row] = &[
         recovery: "Start it again. If it stops repeatedly, `clwd logs` will show what the \
                    app printed before it went away.",
         action: Recovery::Retry,
-        reach: Reach::Soon("#25"),
     },
     Row {
         code: "runtime.resource_exhausted",
@@ -207,7 +224,6 @@ const TABLE: &[Row] = &[
         recovery: "Raise the matching limit under `capabilities.limits` in `clwd.toml` and \
                    rebuild, or change the app to use less.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#25"),
     },
     Row {
         code: "runtime.trap",
@@ -216,7 +232,6 @@ const TABLE: &[Row] = &[
         recovery: "The message carries the app's own failure text and a backtrace. Fix the \
                    app, rebuild with `clwd build`, and run it again.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#25"),
     },
     Row {
         code: "runtime.internal",
@@ -225,7 +240,6 @@ const TABLE: &[Row] = &[
         recovery: "Nothing the caller can change will help. Report it at \
                    https://github.com/clwdrun/clwd/issues.",
         action: Recovery::ReportBug,
-        reach: Reach::Soon("#25"),
     },
     // ---- bundle.* — decided by clwd-bundle ----
     //
@@ -241,7 +255,6 @@ const TABLE: &[Row] = &[
         recovery: "Check the path points at a file `clwd build` produced. If it does, the \
                    file is damaged — build it again with `clwd build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.magic_invalid",
@@ -250,7 +263,6 @@ const TABLE: &[Row] = &[
         recovery: "The file was damaged in transit or storage. Build it again with `clwd \
                    build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.entry_type_invalid",
@@ -260,7 +272,6 @@ const TABLE: &[Row] = &[
         recovery: "Remove the link or special file from your project and run `clwd build` \
                    again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.prefix_not_empty",
@@ -270,7 +281,6 @@ const TABLE: &[Row] = &[
         recovery: "The bundle was not produced by this version of clwd. Build it again \
                    with `clwd build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.mode_invalid",
@@ -280,7 +290,6 @@ const TABLE: &[Row] = &[
         recovery: "Reset the file's permissions in your project — `chmod 644` for data, \
                    `chmod 755` for programs — and run `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.metadata_not_canonical",
@@ -290,7 +299,6 @@ const TABLE: &[Row] = &[
         recovery: "The bundle was not produced by `clwd build`, or was rewritten by \
                    another tool afterwards. Build it again with `clwd build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.checksum_invalid",
@@ -298,7 +306,6 @@ const TABLE: &[Row] = &[
         recovery: "Build it again with `clwd build`. If it keeps happening, the storage or \
                    network carrying the file is corrupting it.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.size_encoding_invalid",
@@ -306,7 +313,6 @@ const TABLE: &[Row] = &[
                   not accept. The file is corrupt or was written by a different tool.",
         recovery: "Build it again with `clwd build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.member_too_large",
@@ -316,7 +322,6 @@ const TABLE: &[Row] = &[
                    storage the app fetches at run time, not inside the app itself — then \
                    run `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.padding_invalid",
@@ -324,7 +329,6 @@ const TABLE: &[Row] = &[
                   empty. The file has been damaged or modified.",
         recovery: "Build it again with `clwd build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.entries_not_sorted",
@@ -334,7 +338,6 @@ const TABLE: &[Row] = &[
         recovery: "The bundle was assembled or rewritten by something other than `clwd \
                    build`. Build it again with `clwd build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.trailer_invalid",
@@ -342,7 +345,6 @@ const TABLE: &[Row] = &[
                   truncated in transit, or two files were joined together.",
         recovery: "Download or build the bundle again with `clwd build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.path_invalid",
@@ -353,7 +355,6 @@ const TABLE: &[Row] = &[
         recovery: "Rename the file in your project so its path is relative and contains no \
                    `..` segments, then run `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.path_not_nfc",
@@ -364,7 +365,6 @@ const TABLE: &[Row] = &[
         recovery: "Rename the file, retyping the accented characters rather than pasting \
                    them, then run `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.path_too_long",
@@ -372,7 +372,6 @@ const TABLE: &[Row] = &[
         recovery: "Shorten the folder or file names in your project so the whole path fits \
                    within 100 bytes, then run `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.path_duplicate",
@@ -381,7 +380,6 @@ const TABLE: &[Row] = &[
         recovery: "The bundle was assembled by something other than `clwd build`. Build it \
                    again with `clwd build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.manifest_missing",
@@ -391,7 +389,6 @@ const TABLE: &[Row] = &[
         recovery: "Add a `clwd.toml` to your project — `clwd init` creates one — then run \
                    `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.manifest_not_toml",
@@ -400,7 +397,6 @@ const TABLE: &[Row] = &[
         recovery: "The message names the line. Fix the syntax in `clwd.toml` and run `clwd \
                    build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.schema_version_missing",
@@ -409,7 +405,6 @@ const TABLE: &[Row] = &[
         recovery: "Add `schema_version = 1` at the top of `clwd.toml` and run `clwd build` \
                    again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.schema_version_unsupported",
@@ -418,7 +413,6 @@ const TABLE: &[Row] = &[
         recovery: "Update clwd to a version that reads this format, or set `schema_version \
                    = 1` and adjust the file to match the older format.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.unknown_key",
@@ -428,7 +422,6 @@ const TABLE: &[Row] = &[
         recovery: "The message names the key. Remove it or correct the spelling, then run \
                    `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.capability_unknown_key",
@@ -438,7 +431,6 @@ const TABLE: &[Row] = &[
         recovery: "Update clwd to a version that supports the permission, or remove it \
                    from the `[capabilities]` section and run `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.capabilities_version_unsupported",
@@ -447,7 +439,6 @@ const TABLE: &[Row] = &[
         recovery: "Update clwd, or set `capabilities.version = 1` and adjust that section \
                    to match, then run `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.field_missing",
@@ -455,7 +446,6 @@ const TABLE: &[Row] = &[
         recovery: "The message names the missing key. Add it to `clwd.toml` and run `clwd \
                    build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.field_type_invalid",
@@ -464,7 +454,6 @@ const TABLE: &[Row] = &[
         recovery: "The message names the key and the kind of value it needs. Correct it in \
                    `clwd.toml` and run `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.field_value_invalid",
@@ -473,7 +462,6 @@ const TABLE: &[Row] = &[
         recovery: "The message names the key and why the value was refused. Correct it in \
                    `clwd.toml` and run `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.runtime_unknown",
@@ -482,7 +470,6 @@ const TABLE: &[Row] = &[
         recovery: "Set `runtime` to either `wasm` or `microvm` in `clwd.toml` and run \
                    `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.manifest_not_canonical",
@@ -492,7 +479,6 @@ const TABLE: &[Row] = &[
         recovery: "The file was edited after the bundle was built. Build it again with \
                    `clwd build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.manifest_self_listed",
@@ -502,7 +488,6 @@ const TABLE: &[Row] = &[
         recovery: "The bundle was assembled by something other than `clwd build`. Build it \
                    again with `clwd build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.member_missing",
@@ -511,7 +496,6 @@ const TABLE: &[Row] = &[
         recovery: "The bundle is incomplete — a build was interrupted, or the file was \
                    removed afterwards. Build it again with `clwd build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.member_unlisted",
@@ -521,7 +505,6 @@ const TABLE: &[Row] = &[
         recovery: "The bundle was modified after it was built. Build it again with `clwd \
                    build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.member_size_mismatch",
@@ -530,7 +513,6 @@ const TABLE: &[Row] = &[
         recovery: "The bundle is damaged or was modified after it was built. Build it \
                    again with `clwd build`.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.member_digest_mismatch",
@@ -540,7 +522,6 @@ const TABLE: &[Row] = &[
         recovery: "Build it again with `clwd build`. If the bundle came from somewhere \
                    else, do not run it — the contents are not what its author signed.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.digest_malformed",
@@ -549,7 +530,6 @@ const TABLE: &[Row] = &[
         recovery: "The file was hand-edited. Build the bundle again with `clwd build` so \
                    the addresses are written for you.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.entrypoint_not_a_member",
@@ -558,7 +538,6 @@ const TABLE: &[Row] = &[
         recovery: "Correct `app.entrypoint` in `clwd.toml` so it names a file the bundle \
                    actually contains, then run `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.wasm_not_component",
@@ -568,7 +547,6 @@ const TABLE: &[Row] = &[
         recovery: "Build for the `wasm32-wasip2` target — `cargo build --target \
                    wasm32-wasip2` — then run `clwd build` again.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.wasm_preamble_invalid",
@@ -576,7 +554,6 @@ const TABLE: &[Row] = &[
         recovery: "Check that `app.entrypoint` points at the compiled `.wasm` file rather \
                    than at source code, then run `clwd build` again.",
         action: Recovery::FixInput,
-        reach: Reach::Soon("#26"),
     },
     Row {
         code: "bundle.digest_mismatch",
@@ -586,7 +563,6 @@ const TABLE: &[Row] = &[
                    build it again. If it keeps happening with a bundle from someone else, \
                    do not run it.",
         action: Recovery::Rebuild,
-        reach: Reach::Soon("#26"),
     },
 ];
 
@@ -646,7 +622,7 @@ fn render() -> String {
             row.code,
             row.code.replace('.', ""),
             row.action.as_str(),
-            match row.reach {
+            match Reach::of(row.code) {
                 Reach::Now => "yes".to_owned(),
                 Reach::Soon(issue) => issue.to_owned(),
             },
@@ -663,17 +639,30 @@ fn render() -> String {
         (
             "runtime.",
             "`runtime.*` — running an app",
-            "Decided by the sandbox. These reach the CLI once `clwd run` lands (#25).",
+            "Decided by the sandbox while an app is starting or running.",
         ),
         (
             "bundle.",
             "`bundle.*` — reading an app bundle",
             "Decided when a bundle is read. A bundle is the single file `clwd build` \
-             produces: an archive holding your app plus the `clwd.toml` that describes it. \
-             Most of these mean that file is damaged or was changed after it was built.",
+             produces: an archive holding your app plus the `clwd.toml` that describes \
+             it. Most of these mean that file is damaged or was changed after it was \
+             built.",
         ),
     ] {
-        out.push_str(&format!("## {title}\n\n{blurb}\n\n"));
+        // The reachability sentence is generated, never written. A hand-written
+        // one goes stale the moment the issue it names lands — two of these said
+        // "these reach the CLI once `clwd run` lands (#25)" and were false the
+        // instant #25 did. The drift check cannot catch that: it compares the
+        // generated page against the committed one, and prose written into the
+        // generator matches itself. Deriving the sentence removes the class.
+        let reach = match Reach::of(&format!("{prefix}x")) {
+            Reach::Now => "Every code here can reach a CLI user today.".to_owned(),
+            Reach::Soon(issue) => {
+                format!("These are not reachable from the CLI yet; {issue} is what changes that.")
+            }
+        };
+        out.push_str(&format!("## {title}\n\n{blurb} {reach}\n\n"));
         for row in TABLE.iter().filter(|r| r.code.starts_with(prefix)) {
             out.push_str(&format!(
                 "### `{}`\n\n{}\n\n**What to do:** {}\n\n*Recovery:* `{}` · *Reachable:* {}\n\n",
@@ -681,7 +670,7 @@ fn render() -> String {
                 row.meaning,
                 row.recovery,
                 row.action.as_str(),
-                match row.reach {
+                match Reach::of(row.code) {
                     Reach::Now => "yes".to_owned(),
                     Reach::Soon(issue) => format!("not yet — {issue}"),
                 },
@@ -734,6 +723,29 @@ fn every_category_has_a_distinct_wire_name() {
         assert_eq!(*name, &name.to_lowercase(), "{name} is not lowercase");
         assert!(!name.contains(' '), "{name} has a space; use snake_case");
     }
+}
+
+/// `Reach::Soon` is unconstructed today — every namespace the CLI knows about is
+/// reachable. It stays because the next namespace to arrive may not be, and its
+/// arm is what the generated section sentence uses; deleting it would mean the
+/// unreachable case has to be re-invented under time pressure, and the `panic!`
+/// in `Reach::of` exists precisely to force that decision.
+///
+/// This exercises the branch so it is a used variant rather than an `#[allow]`,
+/// and pins the sentence it produces.
+#[test]
+fn the_unreachable_branch_still_renders_a_usable_sentence() {
+    let sentence = match Reach::Soon("#99") {
+        Reach::Now => unreachable!("constructed as Soon"),
+        Reach::Soon(issue) => {
+            format!("These are not reachable from the CLI yet; {issue} is what changes that.")
+        }
+    };
+    assert!(sentence.contains("#99"), "the sentence must name the issue");
+    assert!(
+        sentence.contains("not reachable"),
+        "and say plainly that the codes cannot be hit"
+    );
 }
 
 #[test]
@@ -805,6 +817,42 @@ fn every_row_says_something_useful() {
             row.recovery
         );
     }
+}
+
+/// Prose in the generated page must not forward-reference an issue as unfinished
+/// when the thing it gates is already reachable.
+///
+/// The reachability *column* is derived, but section blurbs and per-row text are
+/// hand-written, and two of them said "these reach the CLI once `clwd run` lands
+/// (#25)" — false the moment #25 landed. The drift check cannot see it: it
+/// compares the generated page against the committed one, and prose written into
+/// the generator matches itself.
+///
+/// This is a backstop, not a proof. It catches the specific phrasing that goes
+/// stale — an issue number next to a word implying it has not happened — for
+/// codes now marked reachable. Prose can still be wrong in ways no diff detects;
+/// that limit is stated on the page itself.
+#[test]
+fn reachable_codes_do_not_claim_to_be_waiting_on_an_issue() {
+    let page = render();
+    let stale: Vec<&str> = page
+        .lines()
+        .filter(|line| {
+            let l = line.to_lowercase();
+            l.contains('#')
+                && (l.contains("not yet")
+                    || l.contains("once ")
+                    || l.contains("lands")
+                    || l.contains("will reach"))
+        })
+        .collect();
+
+    assert!(
+        stale.is_empty(),
+        "these lines gate something on an issue that has already landed, or read as \
+         though it has not — regenerate the sentence from `Reach::of` rather than \
+         writing it: {stale:#?}"
+    );
 }
 
 #[test]

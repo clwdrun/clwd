@@ -32,12 +32,40 @@ impl Cli {
 
 /// The full M2 command surface. Every arm is reachable; the ones without bodies
 /// return `cli.not_implemented` rather than being absent from `--help`.
+/// Which sandbox to run an app in.
+///
+/// Both variants are accepted today and only one runs. `--backend microvm`
+/// returns `cli.not_implemented` naming #21 rather than a clap validation
+/// error: a clap rejection reads as though the caller mistyped, exits 2 and
+/// never reaches the envelope, where "this exists and is not built yet" is the
+/// true and more useful thing to say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum Backend {
+    Wasm,
+    MicroVm,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Scaffold a new app from a template
     Init,
     /// Run an app locally in a sandbox
-    Run,
+    Run {
+        /// The bundle to run — the file `clwd build` produces.
+        bundle: std::path::PathBuf,
+
+        /// Request path to send to the app.
+        #[arg(long, default_value = "/")]
+        path: String,
+
+        /// Which sandbox to run in.
+        ///
+        /// Defaults to whatever the bundle's manifest declares. Passing this
+        /// overrides that, which is only ever useful for testing a bundle
+        /// against a backend it was not built for.
+        #[arg(long)]
+        backend: Option<Backend>,
+    },
     /// Run an app locally, reloading it as sources change
     Dev,
     /// Build an app into a deployable bundle

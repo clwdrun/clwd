@@ -527,10 +527,12 @@ name = "clwd-cli"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "base64",
  "clap",
  "clwd-bundle",
  "clwd-runtime",
  "futures-core",
+ "http",
  "indicatif",
  "keyring",
  "reqwest",
@@ -538,6 +540,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

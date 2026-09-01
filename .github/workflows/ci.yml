@@ -248,14 +248,31 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: rustup show active-toolchain
-      - name: clwd-cli must not depend on wasmtime
+      # Until #25 the rule was "clwd-cli must never pull in wasmtime". `clwd run`
+      # has to execute something, so the rule is now "only through the `run`
+      # feature" — a narrower claim, and the only one that can still be true.
+      #
+      # Two assertions, because one no longer covers it. (A) is the original
+      # property, unchanged apart from turning the feature off: an accidental
+      # unconditional dependency still fails it. (B) is new, and exists so the
+      # door is asserted to open — a feature gate nobody proves enables anything
+      # rots into a no-op, and then (A) passes for the wrong reason.
+      - name: the clwd-cli library carries no runtime without `run`
         run: |
-          if cargo tree -p clwd-cli -e normal | grep -q wasmtime; then
-            echo "::error::clwd-cli pulled in wasmtime — a runtime backend must not reach the CLI"
-            cargo tree -p clwd-cli -e normal | grep -B5 wasmtime
+          if cargo tree -p clwd-cli -e normal --no-default-features | grep -q wasmtime; then
+            echo "::error::clwd-cli pulled in wasmtime without the run feature — a runtime backend must reach the CLI only through `run`"
+            cargo tree -p clwd-cli -e normal --no-default-features | grep -B5 wasmtime
             exit 1
           fi
-          echo "ok: no wasmtime in clwd-cli"
+          echo "ok: no wasmtime in clwd-cli without the run feature"
+
+      - name: the `run` feature does enable the runtime
+        run: |
+          if ! cargo tree -p clwd-cli -e normal --features run | grep -q wasmtime; then
+            echo "::error::the run feature no longer pulls in a runtime — the gate above is passing for the wrong reason"
+            exit 1
+          fi
+          echo "ok: the run feature enables wasmtime"
 
   # The guardrail. The control plane lives in a separate private repo; a path
   # or git dependency on it builds fine for whoever added it and breaks for

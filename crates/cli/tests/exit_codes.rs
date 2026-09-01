@@ -47,7 +47,10 @@ fn code(o: &Output) -> i32 {
 /// point: 2 means nothing was attempted.
 #[test]
 fn a_command_that_ran_and_failed_exits_one() {
-    let out = run(&["run"]);
+    // A command with no body: it dispatches, then fails. `run` is no longer
+    // usable here — it requires a bundle argument, so `clwd run` alone is a
+    // usage error and exits 2, which is the distinction this test draws.
+    let out = run(&["build"]);
     assert_eq!(code(&out), 1, "stderr: {}", stderr(&out));
 }
 
@@ -60,6 +63,9 @@ fn a_usage_error_exits_two() {
         vec!["logs", "--nosuchflag"],
         vec!["--json", "nosuchcommand"],
         vec![],
+        // `run` takes a required bundle argument, so omitting it is a usage
+        // error rather than a command that dispatched and failed.
+        vec!["run"],
     ] {
         let out = run(&args);
         assert_eq!(code(&out), 2, "for {args:?}, stderr: {}", stderr(&out));
@@ -90,7 +96,7 @@ fn help_and_version_succeed_in_both_renderers() {
 fn every_failing_json_path_produces_the_envelope() {
     for args in [
         // A command that ran and failed.
-        vec!["--json", "run"],
+        vec!["--json", "build"],
         // Clap paths: unknown subcommand, unknown flag, no subcommand.
         vec!["--json", "nosuchcommand"],
         vec!["--json", "logs", "--nosuchflag"],
@@ -127,8 +133,8 @@ fn every_failing_json_path_produces_the_envelope() {
 #[test]
 fn failures_never_write_to_stdout() {
     for args in [
-        vec!["run"],
-        vec!["--json", "run"],
+        vec!["build"],
+        vec!["--json", "build"],
         vec!["nosuchcommand"],
         vec!["--json", "nosuchcommand"],
         vec!["--json", "logs", "--nosuchflag"],
@@ -146,7 +152,7 @@ fn failures_never_write_to_stdout() {
 /// never have to parse any.
 #[test]
 fn the_human_renderer_is_not_json() {
-    let out = run(&["run"]);
+    let out = run(&["build"]);
     let err = stderr(&out);
     assert!(err.starts_with("error: "), "got {err:?}");
     assert!(
