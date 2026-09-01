@@ -80,6 +80,29 @@ in the field. `clwd-sdk` publishes to crates.io on its own version cadence and i
 consumed by `platform` via a tag-pinned git dependency, so a breaking SDK change
 needs a version bump and a tag, not just a merge.
 
+### Seam pins are tags, never Releases
+
+A tag is a ref. A Release is an announcement. The pins `platform` consumes are
+refs, so they are annotated tags and nothing else.
+
+`gh release create` is reserved for MVP and after. This matters more than it
+sounds: the repository is private today, so nobody outside the org sees a
+Release — but the moment it flips to public at MVP, every Release ever cut
+becomes visible retroactively. The first release people see should be the one
+you meant them to see, not an internal seam pin sitting at the top of the list
+marked "Latest" with auto-generated notes.
+
+**The workflow enforces this rather than trusting anyone to remember it.**
+`cd.yml` originally cut a Release on every `v*` tag push, which is how `v0.0.1`
+got one. A rule written here and disobeyed by our own CI would be worse than no
+rule, so cutting a Release is now `workflow_dispatch` only — a deliberate act
+someone chooses, which is exactly the tag-versus-Release distinction. Pushing a
+seam pin builds the tag as a check and stops there.
+
+Bumping a pin: move forward to a new tag rather than moving a published one.
+`clwd-sdk` and `clwd-bundle` are pinned together at the same tag and move
+together.
+
 ## Untrusted code assumption
 
 Everything running in a sandbox was probably written by an agent and is being run

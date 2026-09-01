@@ -1,18 +1,35 @@
 name: cd
 
 # Two independent release trains, because they have different cadences.
-#   v*            -> the clwd CLI: build binaries, cut a GitHub release
+#   v*            -> the clwd CLI: check the tag builds
 #   clwd-sdk-v*   -> publish clwd-sdk to crates.io
+#   dispatch      -> cut a GitHub Release, deliberately
 #
 # The SDK ships on its own cadence and is consumed by the private platform
 # repo via a tag-pinned git dependency, so a breaking SDK change needs a
 # version bump and a tag — not just a merge to main.
+#
+# **Pushing a `v*` tag does NOT cut a Release.** Most `v*` tags are seam pins
+# that exist so `platform` has a ref to depend on, and a tag is a ref while a
+# Release is an announcement. Cutting one on every pin put `v0.0.1` at the top
+# of the Releases list marked "Latest", with auto-generated notes — invisible
+# while the repo is private and retroactively public the moment it is not.
+#
+# So a Release is `workflow_dispatch` only: a deliberate act with a tag named
+# explicitly. That encodes the distinction rather than asking anyone to
+# remember it, and it does not guess at a version scheme that is not settled —
+# a `v0.0.*`-shaped exclusion would have, and would be annoying to unpick.
 on:
   push:
     tags:
       - "v*"
       - "clwd-sdk-v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to cut a Release from, e.g. v0.1.0"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -28,17 +45,36 @@ env:
 jobs:
   # A tag is a promise about what the code says. Check it before shipping —
   # a mismatch here is cheap, and expensive once it is on crates.io forever.
+  # Runs on both triggers. A dispatched Release is validated exactly as a pushed
+  # tag is: the tag must exist, and it must claim the version the manifest says.
   verify-tag:
-    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
       train: ${{ steps.v.outputs.train }}
+      tag: ${{ steps.v.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
       - id: v
+        # The tag reaches the script through the environment, not through `${{ }}`
+        # interpolation. A dispatch input needs write access to set, so this is
+        # not an untrusted string — but interpolating any input straight into a
+        # shell is the shape of a script injection, and it costs nothing to not
+        # write it that way.
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
+          TAG="$INPUT_TAG"
+          [[ -n "$TAG" ]] || TAG="${GITHUB_REF#refs/tags/}"
+
+          # A Release names a ref that already exists; tag first, release second.
+          if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "::error::no tag ${TAG}"
+            exit 1
+          fi
           if [[ "$TAG" == clwd-sdk-v* ]]; then
             TRAIN=sdk
             VERSION="${TAG#clwd-sdk-v}"
@@ -56,6 +92,7 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "train=$TRAIN" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "ok: $TAG matches manifest ($TRAIN train)"
 
   # Never ship something that would not have passed CI.
@@ -64,6 +101,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.verify-tag.outputs.tag }}
       - run: rustup show active-toolchain
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-features -- -D warnings
@@ -71,8 +110,12 @@ jobs:
       - run: cargo install cargo-deny --locked --version ^0.20
       - run: cargo deny check --hide-inclusion-graph
 
+  # A build check, not a release pipeline. Kept on tag push because knowing a
+  # tag still compiles for both targets is worth the minutes; the packaging and
+  # artifact upload moved to the `release` job, which is the only thing that
+  # needs them. Seam pins are frequent and Actions minutes are billed.
   build-cli:
-    if: needs.verify-tag.outputs.train == 'cli'
+    if: github.event_name == 'push' && needs.verify-tag.outputs.train == 'cli'
     needs: [verify-tag, gate]
     runs-on: ubuntu-latest
     strategy:
@@ -90,14 +133,54 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: rustup target add ${{ matrix.target }}
       - run: cargo build -p clwd-cli --release --locked --target ${{ matrix.target }}
+
+  # Cutting a Release is deliberate, never a side effect of pushing a ref.
+  # See the note at the top of this file and the seam section in
+  # docs/development.md.
+  release:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [verify-tag, gate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - x86_64-unknown-linux-musl
+    steps:
+      # The tag is an input rather than `GITHUB_REF`, so the operator names what
+      # they are releasing instead of it being inferred from how the job was
+      # triggered.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - run: rustup show active-toolchain
+      - name: musl linker
+        if: endsWith(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: rustup target add ${{ matrix.target }}
+      - run: cargo build -p clwd-cli --release --locked --target ${{ matrix.target }}
+
+      # NOTE for #26: this packages the binary as built. `[profile.release]` sets
+      # `strip = "none"` with `debug = "line-tables-only"`, which #25 measured at
+      # 124.5 MB against 22.1 MB stripped — roughly 100 MB of debug information
+      # per artifact, per target. Whether to strip here or change the profile is
+      # #26's call with `cargo-dist`; this comment exists so that arrives as a
+      # known state rather than a surprise.
       - name: package
+        env:
+          V: ${{ needs.verify-tag.outputs.version }}
         run: |
-          V="${{ needs.verify-tag.outputs.version }}"
           NAME="clwd-${V}-${{ matrix.target }}"
           install -Dm755 "target/${{ matrix.target }}/release/clwd" "dist/${NAME}/clwd"
           cp LICENSE README.md "dist/${NAME}/"
           tar -C dist -czf "${NAME}.tar.gz" "${NAME}"
           sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+
       - uses: actions/upload-artifact@v4
         with:
           name: clwd-${{ matrix.target }}
@@ -105,14 +188,16 @@ jobs:
             *.tar.gz
             *.tar.gz.sha256
 
-  release:
-    if: needs.verify-tag.outputs.train == 'cli'
-    needs: [verify-tag, build-cli]
+  cut-release:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [verify-tag, release]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -120,14 +205,16 @@ jobs:
       - name: cut release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.verify-tag.outputs.tag }}
+          V: ${{ needs.verify-tag.outputs.version }}
         run: |
-          gh release create "${GITHUB_REF#refs/tags/}" \
-            --title "clwd ${{ needs.verify-tag.outputs.version }}" \
+          gh release create "$TAG" \
+            --title "clwd $V" \
             --generate-notes \
             artifacts/*.tar.gz artifacts/*.sha256
 
   publish-sdk:
-    if: needs.verify-tag.outputs.train == 'sdk'
+    if: github.event_name == 'push' && needs.verify-tag.outputs.train == 'sdk'
     needs: [verify-tag, gate]
     runs-on: ubuntu-latest
     environment: crates-io
