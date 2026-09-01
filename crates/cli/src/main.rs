@@ -99,7 +99,11 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
 
     let result = match &cli.command {
         Command::Init => emit(format, commands::init::execute(progress), out),
-        Command::Run => emit(format, commands::run::execute(progress), out),
+        Command::Run {
+            bundle,
+            path,
+            backend,
+        } => run(bundle, path, *backend, progress, format, out),
         Command::Dev => emit(format, commands::dev::execute(progress), out),
         Command::Build => emit(format, commands::build::execute(progress), out),
         Command::Publish => emit(format, commands::publish::execute(progress), out),
@@ -140,6 +144,54 @@ fn logs(
         }
         Ok(())
     })
+}
+
+/// `clwd run`, when the feature that carries a sandbox is on.
+///
+/// The response body goes to stdout and everything else to stderr, so
+/// `clwd run ... > out.png` and `clwd run ... | jq` both do the obvious thing.
+#[cfg(feature = "run")]
+fn run(
+    bundle: &std::path::Path,
+    path: &str,
+    backend: Option<clwd_cli::cli::Backend>,
+    progress: Option<&dyn Progress>,
+    format: Format,
+    out: &mut dyn Write,
+) -> Result<(), CliError> {
+    let outcome = commands::run::execute(bundle, path, backend, progress)?;
+
+    // Human mode narrates to stderr: which identity the app saw, and the status.
+    // An app author reading `ctx().caller()` should not have to infer what their
+    // code was handed. `--json` carries both in the object instead, so nothing
+    // is lost and stdout stays parseable.
+    if format == Format::Human {
+        let mut stderr = io::stderr().lock();
+        let _ = writeln!(
+            stderr,
+            "{} — running as {}@{}",
+            outcome.status, outcome.caller, outcome.org
+        );
+    }
+
+    format.value(&outcome, out).map_err(internal)
+}
+
+/// Without the `run` feature the subcommand still parses, and says so.
+///
+/// A surface that lies about what it supports is worse than one that refuses:
+/// `--help` lists `run` either way, so a build without a sandbox must give a
+/// reason rather than a panic or a silent success.
+#[cfg(not(feature = "run"))]
+fn run(
+    _bundle: &std::path::Path,
+    _path: &str,
+    _backend: Option<clwd_cli::cli::Backend>,
+    _progress: Option<&dyn Progress>,
+    _format: Format,
+    _out: &mut dyn Write,
+) -> Result<(), CliError> {
+    Err(CliError::NotImplemented { command: "run" })
 }
 
 /// Render one successful value, or pass the error up to `main` to render.

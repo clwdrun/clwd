@@ -27,9 +27,27 @@ impl Progress for Recorder {
 
 #[test]
 fn commands_are_callable_in_process_and_return_typed_errors() {
-    let err = commands::run::execute(None).expect_err("run has no body yet");
+    let err = commands::init::execute(None).expect_err("init has no body yet");
     assert_eq!(err.code(), "cli.not_implemented");
-    assert!(matches!(err, CliError::NotImplemented { command: "run" }));
+    assert!(matches!(err, CliError::NotImplemented { command: "init" }));
+}
+
+/// `run` has a body now, and it is still callable in-process and still returns
+/// a typed error rather than printing one. This is the property #32 depends on,
+/// checked against the first command that actually does work.
+#[test]
+#[cfg(feature = "run")]
+fn run_is_callable_in_process_and_returns_a_typed_error() {
+    let err = commands::run::execute(
+        std::path::Path::new("/nonexistent/nowhere.clwd"),
+        "/",
+        None,
+        None,
+    )
+    .expect_err("there is no bundle at that path");
+
+    assert_eq!(err.code(), "cli.not_found");
+    assert!(matches!(err, CliError::NotFound { .. }));
 }
 
 #[test]
@@ -43,9 +61,15 @@ fn a_command_accepts_a_progress_sink_that_is_not_a_terminal() {
 fn every_command_reports_either_a_value_or_a_stable_code() {
     // Each arm calls a distinct command, so a command added to the surface
     // without a `Result<_, CliError>` signature will not compile here.
+    //
+    // `run` is no longer in this list: it has a body, so it does not return
+    // `cli.not_implemented` and asserting that it does would be asserting it
+    // stays unbuilt. It is covered by
+    // `run_is_callable_in_process_and_returns_a_typed_error` above and by
+    // `tests/run.rs` end to end. Each command that gains a body leaves this list
+    // the same way.
     let codes = [
         commands::init::execute(None).unwrap_err().code(),
-        commands::run::execute(None).unwrap_err().code(),
         commands::dev::execute(None).unwrap_err().code(),
         commands::build::execute(None).unwrap_err().code(),
         commands::publish::execute(None).unwrap_err().code(),
@@ -89,7 +113,7 @@ fn rendering_never_reaches_for_stdout() {
         }
     }
 
-    let err = commands::run::execute(None).unwrap_err();
+    let err = commands::build::execute(None).unwrap_err();
     let mut broken = Broken;
     assert!(Format::Human.error(&err, &mut broken).is_err());
 }

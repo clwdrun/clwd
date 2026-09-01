@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare spec-intact bundle-deps trait-deps wasm-contained deny
+check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare cli-deps spec-intact bundle-deps trait-deps wasm-contained deny
 
 # Secret scan over full history. GitHub's own scanning and push protection are
 # Advanced Security features and are not available on a private repository, so
@@ -88,6 +88,22 @@ lib-silent:
 # Terminal-drawing deps are a feature. This asserts the library does not need them.
 lib-bare:
     cargo build -p clwd-cli --lib --no-default-features
+
+# A runtime backend reaches the CLI only through the `run` feature. Two
+# assertions: absent without it, present with it. The second exists so the gate
+# cannot pass because the feature quietly stopped doing anything.
+cli-deps:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    if cargo tree -p clwd-cli -e normal --no-default-features | grep -q wasmtime; then
+      echo "error: wasmtime reaches clwd-cli without the run feature"
+      exit 1
+    fi
+    if ! cargo tree -p clwd-cli -e normal --features run | grep -q wasmtime; then
+      echo "error: the run feature no longer enables a runtime — the check above is meaningless"
+      exit 1
+    fi
+    echo "ok: a runtime reaches clwd-cli only through the run feature"
 
 # docs/spec defines bytes, including whitespace inside code spans, and the
 # fixtures are the conformance vector. Catch a formatter reflowing either here

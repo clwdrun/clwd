@@ -50,54 +50,54 @@ retryable, a per-code mapping would be a second compatibility surface for no gai
 | [`cli.not_implemented`](#clinot_implemented) | `report_bug` | yes |
 | [`cli.config`](#cliconfig) | `fix_input` | yes |
 | [`cli.internal`](#cliinternal) | `report_bug` | yes |
-| [`runtime.bundle_not_found`](#runtimebundle_not_found) | `fix_input` | #25 |
-| [`runtime.deadline_exceeded`](#runtimedeadline_exceeded) | `retry` | #25 |
-| [`runtime.stopped`](#runtimestopped) | `retry` | #25 |
-| [`runtime.resource_exhausted`](#runtimeresource_exhausted) | `fix_input` | #25 |
-| [`runtime.trap`](#runtimetrap) | `rebuild` | #25 |
-| [`runtime.internal`](#runtimeinternal) | `report_bug` | #25 |
-| [`bundle.not_tar`](#bundlenot_tar) | `rebuild` | #26 |
-| [`bundle.magic_invalid`](#bundlemagic_invalid) | `rebuild` | #26 |
-| [`bundle.entry_type_invalid`](#bundleentry_type_invalid) | `fix_input` | #26 |
-| [`bundle.prefix_not_empty`](#bundleprefix_not_empty) | `rebuild` | #26 |
-| [`bundle.mode_invalid`](#bundlemode_invalid) | `fix_input` | #26 |
-| [`bundle.metadata_not_canonical`](#bundlemetadata_not_canonical) | `rebuild` | #26 |
-| [`bundle.checksum_invalid`](#bundlechecksum_invalid) | `rebuild` | #26 |
-| [`bundle.size_encoding_invalid`](#bundlesize_encoding_invalid) | `rebuild` | #26 |
-| [`bundle.member_too_large`](#bundlemember_too_large) | `fix_input` | #26 |
-| [`bundle.padding_invalid`](#bundlepadding_invalid) | `rebuild` | #26 |
-| [`bundle.entries_not_sorted`](#bundleentries_not_sorted) | `rebuild` | #26 |
-| [`bundle.trailer_invalid`](#bundletrailer_invalid) | `rebuild` | #26 |
-| [`bundle.path_invalid`](#bundlepath_invalid) | `fix_input` | #26 |
-| [`bundle.path_not_nfc`](#bundlepath_not_nfc) | `fix_input` | #26 |
-| [`bundle.path_too_long`](#bundlepath_too_long) | `fix_input` | #26 |
-| [`bundle.path_duplicate`](#bundlepath_duplicate) | `rebuild` | #26 |
-| [`bundle.manifest_missing`](#bundlemanifest_missing) | `fix_input` | #26 |
-| [`bundle.manifest_not_toml`](#bundlemanifest_not_toml) | `fix_input` | #26 |
-| [`bundle.schema_version_missing`](#bundleschema_version_missing) | `fix_input` | #26 |
-| [`bundle.schema_version_unsupported`](#bundleschema_version_unsupported) | `fix_input` | #26 |
-| [`bundle.unknown_key`](#bundleunknown_key) | `fix_input` | #26 |
-| [`bundle.capability_unknown_key`](#bundlecapability_unknown_key) | `fix_input` | #26 |
-| [`bundle.capabilities_version_unsupported`](#bundlecapabilities_version_unsupported) | `fix_input` | #26 |
-| [`bundle.field_missing`](#bundlefield_missing) | `fix_input` | #26 |
-| [`bundle.field_type_invalid`](#bundlefield_type_invalid) | `fix_input` | #26 |
-| [`bundle.field_value_invalid`](#bundlefield_value_invalid) | `fix_input` | #26 |
-| [`bundle.runtime_unknown`](#bundleruntime_unknown) | `fix_input` | #26 |
-| [`bundle.manifest_not_canonical`](#bundlemanifest_not_canonical) | `rebuild` | #26 |
-| [`bundle.manifest_self_listed`](#bundlemanifest_self_listed) | `rebuild` | #26 |
-| [`bundle.member_missing`](#bundlemember_missing) | `rebuild` | #26 |
-| [`bundle.member_unlisted`](#bundlemember_unlisted) | `rebuild` | #26 |
-| [`bundle.member_size_mismatch`](#bundlemember_size_mismatch) | `rebuild` | #26 |
-| [`bundle.member_digest_mismatch`](#bundlemember_digest_mismatch) | `rebuild` | #26 |
-| [`bundle.digest_malformed`](#bundledigest_malformed) | `rebuild` | #26 |
-| [`bundle.entrypoint_not_a_member`](#bundleentrypoint_not_a_member) | `fix_input` | #26 |
-| [`bundle.wasm_not_component`](#bundlewasm_not_component) | `rebuild` | #26 |
-| [`bundle.wasm_preamble_invalid`](#bundlewasm_preamble_invalid) | `fix_input` | #26 |
-| [`bundle.digest_mismatch`](#bundledigest_mismatch) | `rebuild` | #26 |
+| [`runtime.bundle_not_found`](#runtimebundle_not_found) | `fix_input` | yes |
+| [`runtime.deadline_exceeded`](#runtimedeadline_exceeded) | `retry` | yes |
+| [`runtime.stopped`](#runtimestopped) | `retry` | yes |
+| [`runtime.resource_exhausted`](#runtimeresource_exhausted) | `fix_input` | yes |
+| [`runtime.trap`](#runtimetrap) | `rebuild` | yes |
+| [`runtime.internal`](#runtimeinternal) | `report_bug` | yes |
+| [`bundle.not_tar`](#bundlenot_tar) | `rebuild` | yes |
+| [`bundle.magic_invalid`](#bundlemagic_invalid) | `rebuild` | yes |
+| [`bundle.entry_type_invalid`](#bundleentry_type_invalid) | `fix_input` | yes |
+| [`bundle.prefix_not_empty`](#bundleprefix_not_empty) | `rebuild` | yes |
+| [`bundle.mode_invalid`](#bundlemode_invalid) | `fix_input` | yes |
+| [`bundle.metadata_not_canonical`](#bundlemetadata_not_canonical) | `rebuild` | yes |
+| [`bundle.checksum_invalid`](#bundlechecksum_invalid) | `rebuild` | yes |
+| [`bundle.size_encoding_invalid`](#bundlesize_encoding_invalid) | `rebuild` | yes |
+| [`bundle.member_too_large`](#bundlemember_too_large) | `fix_input` | yes |
+| [`bundle.padding_invalid`](#bundlepadding_invalid) | `rebuild` | yes |
+| [`bundle.entries_not_sorted`](#bundleentries_not_sorted) | `rebuild` | yes |
+| [`bundle.trailer_invalid`](#bundletrailer_invalid) | `rebuild` | yes |
+| [`bundle.path_invalid`](#bundlepath_invalid) | `fix_input` | yes |
+| [`bundle.path_not_nfc`](#bundlepath_not_nfc) | `fix_input` | yes |
+| [`bundle.path_too_long`](#bundlepath_too_long) | `fix_input` | yes |
+| [`bundle.path_duplicate`](#bundlepath_duplicate) | `rebuild` | yes |
+| [`bundle.manifest_missing`](#bundlemanifest_missing) | `fix_input` | yes |
+| [`bundle.manifest_not_toml`](#bundlemanifest_not_toml) | `fix_input` | yes |
+| [`bundle.schema_version_missing`](#bundleschema_version_missing) | `fix_input` | yes |
+| [`bundle.schema_version_unsupported`](#bundleschema_version_unsupported) | `fix_input` | yes |
+| [`bundle.unknown_key`](#bundleunknown_key) | `fix_input` | yes |
+| [`bundle.capability_unknown_key`](#bundlecapability_unknown_key) | `fix_input` | yes |
+| [`bundle.capabilities_version_unsupported`](#bundlecapabilities_version_unsupported) | `fix_input` | yes |
+| [`bundle.field_missing`](#bundlefield_missing) | `fix_input` | yes |
+| [`bundle.field_type_invalid`](#bundlefield_type_invalid) | `fix_input` | yes |
+| [`bundle.field_value_invalid`](#bundlefield_value_invalid) | `fix_input` | yes |
+| [`bundle.runtime_unknown`](#bundleruntime_unknown) | `fix_input` | yes |
+| [`bundle.manifest_not_canonical`](#bundlemanifest_not_canonical) | `rebuild` | yes |
+| [`bundle.manifest_self_listed`](#bundlemanifest_self_listed) | `rebuild` | yes |
+| [`bundle.member_missing`](#bundlemember_missing) | `rebuild` | yes |
+| [`bundle.member_unlisted`](#bundlemember_unlisted) | `rebuild` | yes |
+| [`bundle.member_size_mismatch`](#bundlemember_size_mismatch) | `rebuild` | yes |
+| [`bundle.member_digest_mismatch`](#bundlemember_digest_mismatch) | `rebuild` | yes |
+| [`bundle.digest_malformed`](#bundledigest_malformed) | `rebuild` | yes |
+| [`bundle.entrypoint_not_a_member`](#bundleentrypoint_not_a_member) | `fix_input` | yes |
+| [`bundle.wasm_not_component`](#bundlewasm_not_component) | `rebuild` | yes |
+| [`bundle.wasm_preamble_invalid`](#bundlewasm_preamble_invalid) | `fix_input` | yes |
+| [`bundle.digest_mismatch`](#bundledigest_mismatch) | `rebuild` | yes |
 
 ## `cli.*` — the command line itself
 
-Decided by clwd on your machine, before anything is built or run.
+Decided by clwd on your machine, before anything is built or run. Every code here can reach a CLI user today.
 
 ### `cli.invalid_argument`
 
@@ -141,7 +141,7 @@ clwd hit a problem it does not have a specific explanation for. This is always a
 
 ## `runtime.*` — running an app
 
-Decided by the sandbox. These reach the CLI once `clwd run` lands (#25).
+Decided by the sandbox while an app is starting or running. Every code here can reach a CLI user today.
 
 ### `runtime.bundle_not_found`
 
@@ -149,7 +149,7 @@ The app was asked for by its content address, but no stored copy with that addre
 
 **What to do:** Publish the app first with `clwd publish`, or check that the address came from the build you meant.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #25
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `runtime.deadline_exceeded`
 
@@ -157,7 +157,7 @@ The app ran longer than it was allowed to. The message says whether the limit wa
 
 **What to do:** Retrying may work if the app was briefly slow. If it happens every time, the app is doing too much work for its time budget — raise `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild.
 
-*Recovery:* `retry` · *Reachable:* not yet — #25
+*Recovery:* `retry` · *Reachable:* yes
 
 ### `runtime.stopped`
 
@@ -165,7 +165,7 @@ The app was running but is no longer. It exited on its own, crashed, or was recl
 
 **What to do:** Start it again. If it stops repeatedly, `clwd logs` will show what the app printed before it went away.
 
-*Recovery:* `retry` · *Reachable:* not yet — #25
+*Recovery:* `retry` · *Reachable:* yes
 
 ### `runtime.resource_exhausted`
 
@@ -173,7 +173,7 @@ The app asked for more of a resource — memory, most often — than its manifes
 
 **What to do:** Raise the matching limit under `capabilities.limits` in `clwd.toml` and rebuild, or change the app to use less.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #25
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `runtime.trap`
 
@@ -181,7 +181,7 @@ The app itself failed — it panicked, hit an assertion, or executed something i
 
 **What to do:** The message carries the app's own failure text and a backtrace. Fix the app, rebuild with `clwd build`, and run it again.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #25
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `runtime.internal`
 
@@ -189,11 +189,11 @@ The sandbox hit a problem it does not have a specific explanation for. This is a
 
 **What to do:** Nothing the caller can change will help. Report it at https://github.com/clwdrun/clwd/issues.
 
-*Recovery:* `report_bug` · *Reachable:* not yet — #25
+*Recovery:* `report_bug` · *Reachable:* yes
 
 ## `bundle.*` — reading an app bundle
 
-Decided when a bundle is read. A bundle is the single file `clwd build` produces: an archive holding your app plus the `clwd.toml` that describes it. Most of these mean that file is damaged or was changed after it was built.
+Decided when a bundle is read. A bundle is the single file `clwd build` produces: an archive holding your app plus the `clwd.toml` that describes it. Most of these mean that file is damaged or was changed after it was built. Every code here can reach a CLI user today.
 
 ### `bundle.not_tar`
 
@@ -201,7 +201,7 @@ The file is not an app bundle at all. clwd could not read it as an archive.
 
 **What to do:** Check the path points at a file `clwd build` produced. If it does, the file is damaged — build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.magic_invalid`
 
@@ -209,7 +209,7 @@ The bundle's internal structure is corrupt. Part of it that identifies the archi
 
 **What to do:** The file was damaged in transit or storage. Build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.entry_type_invalid`
 
@@ -217,7 +217,7 @@ The bundle contains something other than an ordinary file — a symbolic link, a
 
 **What to do:** Remove the link or special file from your project and run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.prefix_not_empty`
 
@@ -225,7 +225,7 @@ The bundle uses an older archive layout that clwd does not accept, because the s
 
 **What to do:** The bundle was not produced by this version of clwd. Build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.mode_invalid`
 
@@ -233,7 +233,7 @@ A file in the bundle has unexpected permissions. Bundles allow only ordinary rea
 
 **What to do:** Reset the file's permissions in your project — `chmod 644` for data, `chmod 755` for programs — and run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.metadata_not_canonical`
 
@@ -241,7 +241,7 @@ A file in the bundle carries machine-specific details such as a timestamp or an 
 
 **What to do:** The bundle was not produced by `clwd build`, or was rewritten by another tool afterwards. Build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.checksum_invalid`
 
@@ -249,7 +249,7 @@ A self-check inside the bundle failed. The file has been damaged.
 
 **What to do:** Build it again with `clwd build`. If it keeps happening, the storage or network carrying the file is corrupting it.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.size_encoding_invalid`
 
@@ -257,7 +257,7 @@ The bundle records the length of one of its files in a form clwd does not accept
 
 **What to do:** Build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.member_too_large`
 
@@ -265,7 +265,7 @@ One file inside the bundle is larger than the 8 GiB maximum a bundle can describ
 
 **What to do:** Remove or shrink the oversized file — large assets usually belong in storage the app fetches at run time, not inside the app itself — then run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.padding_invalid`
 
@@ -273,7 +273,7 @@ Unused space inside the bundle contains stray data rather than being empty. The 
 
 **What to do:** Build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.entries_not_sorted`
 
@@ -281,7 +281,7 @@ The files inside the bundle are not in the fixed order clwd requires. The order 
 
 **What to do:** The bundle was assembled or rewritten by something other than `clwd build`. Build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.trailer_invalid`
 
@@ -289,7 +289,7 @@ The bundle is cut short or has extra data after its end. It was truncated in tra
 
 **What to do:** Download or build the bundle again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.path_invalid`
 
@@ -297,7 +297,7 @@ A file inside the bundle has a name clwd will not accept — an absolute path, o
 
 **What to do:** Rename the file in your project so its path is relative and contains no `..` segments, then run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.path_not_nfc`
 
@@ -305,7 +305,7 @@ A file name uses accented or non-English characters written in a form that some 
 
 **What to do:** Rename the file, retyping the accented characters rather than pasting them, then run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.path_too_long`
 
@@ -313,7 +313,7 @@ A file's path inside the bundle is longer than the 100-byte maximum.
 
 **What to do:** Shorten the folder or file names in your project so the whole path fits within 100 bytes, then run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.path_duplicate`
 
@@ -321,7 +321,7 @@ The same file path appears twice in the bundle, so which one the app would actua
 
 **What to do:** The bundle was assembled by something other than `clwd build`. Build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.manifest_missing`
 
@@ -329,7 +329,7 @@ The bundle has no `clwd.toml`. That file is what says which program to run and w
 
 **What to do:** Add a `clwd.toml` to your project — `clwd init` creates one — then run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.manifest_not_toml`
 
@@ -337,7 +337,7 @@ The `clwd.toml` file could not be read. Its text is not valid TOML — usually a
 
 **What to do:** The message names the line. Fix the syntax in `clwd.toml` and run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.schema_version_missing`
 
@@ -345,7 +345,7 @@ The `clwd.toml` file could not be read. Its text is not valid TOML — usually a
 
 **What to do:** Add `schema_version = 1` at the top of `clwd.toml` and run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.schema_version_unsupported`
 
@@ -353,7 +353,7 @@ The `clwd.toml` file could not be read. Its text is not valid TOML — usually a
 
 **What to do:** Update clwd to a version that reads this format, or set `schema_version = 1` and adjust the file to match the older format.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.unknown_key`
 
@@ -361,7 +361,7 @@ The `clwd.toml` file could not be read. Its text is not valid TOML — usually a
 
 **What to do:** The message names the key. Remove it or correct the spelling, then run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.capability_unknown_key`
 
@@ -369,7 +369,7 @@ The `clwd.toml` file could not be read. Its text is not valid TOML — usually a
 
 **What to do:** Update clwd to a version that supports the permission, or remove it from the `[capabilities]` section and run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.capabilities_version_unsupported`
 
@@ -377,7 +377,7 @@ The permissions section of `clwd.toml` is written in a newer format version than
 
 **What to do:** Update clwd, or set `capabilities.version = 1` and adjust that section to match, then run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.field_missing`
 
@@ -385,7 +385,7 @@ A setting that `clwd.toml` must contain is absent.
 
 **What to do:** The message names the missing key. Add it to `clwd.toml` and run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.field_type_invalid`
 
@@ -393,7 +393,7 @@ A setting in `clwd.toml` is the wrong kind of value — a number where text was 
 
 **What to do:** The message names the key and the kind of value it needs. Correct it in `clwd.toml` and run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.field_value_invalid`
 
@@ -401,7 +401,7 @@ A setting in `clwd.toml` is the right kind of value but not an allowed one — a
 
 **What to do:** The message names the key and why the value was refused. Correct it in `clwd.toml` and run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.runtime_unknown`
 
@@ -409,7 +409,7 @@ A setting in `clwd.toml` is the right kind of value but not an allowed one — a
 
 **What to do:** Set `runtime` to either `wasm` or `microvm` in `clwd.toml` and run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.manifest_not_canonical`
 
@@ -417,7 +417,7 @@ A setting in `clwd.toml` is the right kind of value but not an allowed one — a
 
 **What to do:** The file was edited after the bundle was built. Build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.manifest_self_listed`
 
@@ -425,7 +425,7 @@ A setting in `clwd.toml` is the right kind of value but not an allowed one — a
 
 **What to do:** The bundle was assembled by something other than `clwd build`. Build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.member_missing`
 
@@ -433,7 +433,7 @@ A setting in `clwd.toml` is the right kind of value but not an allowed one — a
 
 **What to do:** The bundle is incomplete — a build was interrupted, or the file was removed afterwards. Build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.member_unlisted`
 
@@ -441,7 +441,7 @@ The bundle contains a file that `clwd.toml` does not list. Every file must be li
 
 **What to do:** The bundle was modified after it was built. Build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.member_size_mismatch`
 
@@ -449,7 +449,7 @@ A file inside the bundle is a different size from what `clwd.toml` says it shoul
 
 **What to do:** The bundle is damaged or was modified after it was built. Build it again with `clwd build`.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.member_digest_mismatch`
 
@@ -457,7 +457,7 @@ A file inside the app bundle does not match what the bundle says it should conta
 
 **What to do:** Build it again with `clwd build`. If the bundle came from somewhere else, do not run it — the contents are not what its author signed.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.digest_malformed`
 
@@ -465,7 +465,7 @@ A content address in `clwd.toml` is not written in the required form: `blake3:` 
 
 **What to do:** The file was hand-edited. Build the bundle again with `clwd build` so the addresses are written for you.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.entrypoint_not_a_member`
 
@@ -473,7 +473,7 @@ A content address in `clwd.toml` is not written in the required form: `blake3:` 
 
 **What to do:** Correct `app.entrypoint` in `clwd.toml` so it names a file the bundle actually contains, then run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.wasm_not_component`
 
@@ -481,7 +481,7 @@ The app was built as an older, simpler kind of WebAssembly program than the `was
 
 **What to do:** Build for the `wasm32-wasip2` target — `cargo build --target wasm32-wasip2` — then run `clwd build` again.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.wasm_preamble_invalid`
 
@@ -489,7 +489,7 @@ The file `clwd.toml` names as the program is not WebAssembly at all.
 
 **What to do:** Check that `app.entrypoint` points at the compiled `.wasm` file rather than at source code, then run `clwd build` again.
 
-*Recovery:* `fix_input` · *Reachable:* not yet — #26
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.digest_mismatch`
 
@@ -497,7 +497,7 @@ The bundle as a whole does not match the content address it was asked for. The f
 
 **What to do:** The download was corrupted or the wrong file was fetched. Fetch or build it again. If it keeps happening with a bundle from someone else, do not run it.
 
-*Recovery:* `rebuild` · *Reachable:* not yet — #26
+*Recovery:* `rebuild` · *Reachable:* yes
 
 ## Changing a code
 
