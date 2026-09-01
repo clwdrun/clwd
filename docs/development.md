@@ -110,3 +110,26 @@ by a non-engineer against real company data. When in doubt about a
 capability — filesystem access, network egress, host resource limits — default to
 denying it and make it explicit rather than inheriting whatever the runtime allows
 by default.
+
+## `gh pr edit` and Projects (classic)
+
+`gh pr edit` can fail against these repositories with
+
+```
+GraphQL: Projects (classic) is being deprecated in favor of the new Projects
+experience ... (repository.pullRequest.projectCards)
+```
+
+The important part is that it **fails silently from the caller's point of
+view**: the error goes to stderr, the exit status is easy to miss in a script,
+and the PR body is left unchanged. Anyone who does not re-read the PR afterwards
+will believe an edit landed that did not.
+
+Use the REST endpoint instead, which does not touch the deprecated field:
+
+```bash
+gh api -X PATCH repos/clwdrun/<repo>/pulls/<N> -F body=@body.md
+```
+
+Either way, read the body back after editing. The same applies to `gh issue
+edit`.
