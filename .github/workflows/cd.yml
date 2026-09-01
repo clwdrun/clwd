@@ -45,8 +45,18 @@ env:
 jobs:
   # A tag is a promise about what the code says. Check it before shipping —
   # a mismatch here is cheap, and expensive once it is on crates.io forever.
-  # Runs on both triggers. A dispatched Release is validated exactly as a pushed
-  # tag is: the tag must exist, and it must claim the version the manifest says.
+  #
+  # **This job looks removable and is not.** Its only visible output is "the tag
+  # is valid", which reads like a no-op to someone tidying up. What it actually
+  # does is three things nothing else does: it resolves the tag from *either*
+  # trigger, so a dispatched Release is validated exactly as a pushed tag is; it
+  # refuses a tag that does not exist, because a Release names a ref rather than
+  # creating one; and it decides which release train a tag belongs to, which is
+  # what keeps a seam pin from reaching crates.io.
+  #
+  # The trains are separated by tag shape, not by job condition alone: `v0.0.2`
+  # matches `v*` and sets `TRAIN=cli`, while only `clwd-sdk-v*` sets `TRAIN=sdk`.
+  # Delete this job and both properties go with it.
   verify-tag:
     runs-on: ubuntu-latest
     outputs:
@@ -213,6 +223,16 @@ jobs:
             --generate-notes \
             artifacts/*.tar.gz artifacts/*.sha256
 
+  # Still on tag push, deliberately: `clwd-sdk-v*` is an explicit release tag,
+  # never a seam pin — a `v*` pin sets `TRAIN=cli` and skips this job entirely,
+  # so the concern that motivated moving `release` to dispatch does not apply.
+  #
+  # A crates.io publish is irreversible in a way a Release is not (yank hides a
+  # version, it does not remove it), and the designed gate for that is the
+  # `crates-io` environment's approval rules — not the trigger. Neither the
+  # environment nor `CARGO_REGISTRY_TOKEN` is configured today, so this job
+  # currently fails closed at `require token` before reaching `cargo publish`.
+  # None of the three crate names are reserved on crates.io yet either.
   publish-sdk:
     if: github.event_name == 'push' && needs.verify-tag.outputs.train == 'sdk'
     needs: [verify-tag, gate]
