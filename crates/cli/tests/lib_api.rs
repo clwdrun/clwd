@@ -50,10 +50,27 @@ fn run_is_callable_in_process_and_returns_a_typed_error() {
     assert!(matches!(err, CliError::NotFound { .. }));
 }
 
+/// Same property as `run` above, for the second command to gain a body: it is
+/// callable in process and reports a typed error rather than printing one.
+#[test]
+fn build_is_callable_in_process_and_returns_a_typed_error() {
+    let err = commands::build::execute(
+        std::path::Path::new("/nonexistent/nowhere"),
+        None,
+        true,
+        None,
+    )
+    .expect_err("there is no project at that path");
+
+    // The path holds no Cargo.toml, which is a `cli.not_found` rather than a
+    // missing-tool error: cargo is installed, the project is not there.
+    assert_eq!(err.code(), "cli.not_found");
+}
+
 #[test]
 fn a_command_accepts_a_progress_sink_that_is_not_a_terminal() {
     let recorder = Recorder::default();
-    let err = commands::build::execute(Some(&recorder)).expect_err("build has no body yet");
+    let err = commands::dev::execute(Some(&recorder)).expect_err("dev has no body yet");
     assert_eq!(err.code(), "cli.not_implemented");
 }
 
@@ -62,16 +79,15 @@ fn every_command_reports_either_a_value_or_a_stable_code() {
     // Each arm calls a distinct command, so a command added to the surface
     // without a `Result<_, CliError>` signature will not compile here.
     //
-    // `run` is no longer in this list: it has a body, so it does not return
-    // `cli.not_implemented` and asserting that it does would be asserting it
-    // stays unbuilt. It is covered by
-    // `run_is_callable_in_process_and_returns_a_typed_error` above and by
-    // `tests/run.rs` end to end. Each command that gains a body leaves this list
-    // the same way.
+    // `run` and `build` are no longer in this list: they have bodies, so they do
+    // not return `cli.not_implemented` and asserting that they do would be
+    // asserting they stay unbuilt. Each is covered by its own
+    // `*_is_callable_in_process_and_returns_a_typed_error` above, and end to end
+    // by `tests/run.rs` and `tests/build.rs`. Every command that gains a body
+    // leaves this list the same way.
     let codes = [
         commands::init::execute(None).unwrap_err().code(),
         commands::dev::execute(None).unwrap_err().code(),
-        commands::build::execute(None).unwrap_err().code(),
         commands::publish::execute(None).unwrap_err().code(),
         commands::logs::execute(false, None).unwrap_err().code(),
         commands::secrets::execute(None).unwrap_err().code(),
@@ -113,7 +129,9 @@ fn rendering_never_reaches_for_stdout() {
         }
     }
 
-    let err = commands::build::execute(None).unwrap_err();
+    // Any error will do; this test is about where the renderer writes, not
+    // about which command produced the failure.
+    let err = commands::dev::execute(None).unwrap_err();
     let mut broken = Broken;
     assert!(Format::Human.error(&err, &mut broken).is_err());
 }

@@ -179,6 +179,17 @@ define_cli_error! {
     }
 }
 
+/// So `?` works on a bundle operation without a `map_err` at every call site.
+///
+/// Deliberately not written for `clwd_runtime::Error`: that variant is behind
+/// `feature = "run"`, and a `From` impl that appears and disappears with a
+/// feature is a trap for anyone reading a call site with the feature on.
+impl From<clwd_bundle::Error> for CliError {
+    fn from(source: clwd_bundle::Error) -> Self {
+        Self::Bundle { source }
+    }
+}
+
 /// What a delegated error offers instead of a hint of its own.
 ///
 /// A real next step rather than a null, which #31 established is a dead end for

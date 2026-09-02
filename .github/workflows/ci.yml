@@ -65,6 +65,16 @@ jobs:
       - name: secrets
         run: gitleaks detect --no-banner --redact --exit-code 1
 
+      # `clwd build` strips custom sections with this, and the test that the
+      # optimiser actually shrinks anything is unconditional. Without it here
+      # that test would have to skip — and CI is the one place it must not,
+      # since a local machine that happens to have the tool would pass while
+      # the gate quietly checked nothing.
+      - name: install wasm-tools
+        uses: taiki-e/install-action@742a3317eac7bd62f91cd888b4eead5e784ba833 # v2.87.1
+        with:
+          tool: wasm-tools@1.257.1
+
       # rustup honours rust-toolchain.toml on first invocation, installing the
       # pinned version with its profile, components and targets. No third-party
       # toolchain action needed — fewer actions is less supply chain in a repo
@@ -249,13 +259,18 @@ jobs:
       - name: build sdk as a component
         run: cargo build -p clwd-sdk --target wasm32-wasip2
 
+      # Installed through the pinned action rather than curled into /tmp. The
+      # tarball was previously fetched over an unverified pipe and executed —
+      # the same gap #67 closed for gitleaks — and #28 introduced a second
+      # wasm-tools install in the gate job, so unifying on one mechanism also
+      # removes the chance of the two drifting to different versions.
+      - name: install wasm-tools
+        uses: taiki-e/install-action@742a3317eac7bd62f91cd888b4eead5e784ba833 # v2.87.1
+        with:
+          tool: wasm-tools@1.257.1
+
       - name: wit parses standalone
-        run: |
-          WT=1.257.1
-          curl -sSL -o /tmp/wt.tar.gz \
-            "https://github.com/bytecodealliance/wasm-tools/releases/download/v${WT}/wasm-tools-${WT}-x86_64-linux.tar.gz"
-          tar xzf /tmp/wt.tar.gz -C /tmp
-          "/tmp/wasm-tools-${WT}-x86_64-linux/wasm-tools" component wit wit/
+        run: wasm-tools component wit wit/
 
   # `clwd logs` must not carry a runtime backend. Asserted, not trusted.
   cli-deps:

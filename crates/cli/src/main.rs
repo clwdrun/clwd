@@ -105,7 +105,15 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
             backend,
         } => run(bundle, path, *backend, progress, format, out),
         Command::Dev => emit(format, commands::dev::execute(progress), out),
-        Command::Build => emit(format, commands::build::execute(progress), out),
+        Command::Build {
+            project,
+            out: dest,
+            no_optimize,
+        } => emit(
+            format,
+            commands::build::execute(project, dest.clone(), !no_optimize, progress),
+            out,
+        ),
         Command::Publish => emit(format, commands::publish::execute(progress), out),
         Command::Logs { follow } => logs(*follow, progress, format, out),
         Command::Secrets => emit(format, commands::secrets::execute(progress), out),
