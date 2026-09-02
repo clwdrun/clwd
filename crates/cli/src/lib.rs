@@ -11,8 +11,9 @@ pub mod cli;
 pub mod commands;
 pub mod error;
 pub mod render;
+pub mod secrets;
 
-pub use cli::{Cli, Command};
+pub use cli::{Cli, Command, SecretsAction};
 pub use error::CliError;
 pub use render::Format;
 

@@ -42,6 +42,7 @@ fn run_is_callable_in_process_and_returns_a_typed_error() {
         std::path::Path::new("/nonexistent/nowhere.clwd"),
         "/",
         None,
+        std::path::Path::new("."),
         None,
     )
     .expect_err("there is no bundle at that path");
@@ -67,6 +68,17 @@ fn build_is_callable_in_process_and_returns_a_typed_error() {
     assert_eq!(err.code(), "cli.not_found");
 }
 
+/// Same property as `run` and `build`: callable in process, typed error out.
+///
+/// The path holds no `clwd.toml`, so this exercises the lookup that tells an
+/// author where the app name comes from.
+#[test]
+fn secrets_is_callable_in_process_and_returns_a_typed_error() {
+    let err = commands::secrets::list(std::path::Path::new("/nonexistent/nowhere"))
+        .expect_err("there is no project at that path");
+    assert_eq!(err.code(), "cli.not_found");
+}
+
 #[test]
 fn a_command_accepts_a_progress_sink_that_is_not_a_terminal() {
     let recorder = Recorder::default();
@@ -79,7 +91,7 @@ fn every_command_reports_either_a_value_or_a_stable_code() {
     // Each arm calls a distinct command, so a command added to the surface
     // without a `Result<_, CliError>` signature will not compile here.
     //
-    // `run` and `build` are no longer in this list: they have bodies, so they do
+    // `run`, `build` and `secrets` are no longer in this list: they have bodies, so they do
     // not return `cli.not_implemented` and asserting that they do would be
     // asserting they stay unbuilt. Each is covered by its own
     // `*_is_callable_in_process_and_returns_a_typed_error` above, and end to end
@@ -90,7 +102,6 @@ fn every_command_reports_either_a_value_or_a_stable_code() {
         commands::dev::execute(None).unwrap_err().code(),
         commands::publish::execute(None).unwrap_err().code(),
         commands::logs::execute(false, None).unwrap_err().code(),
-        commands::secrets::execute(None).unwrap_err().code(),
         commands::mcp::execute(None).unwrap_err().code(),
     ];
     assert!(
@@ -101,7 +112,8 @@ fn every_command_reports_either_a_value_or_a_stable_code() {
 
 #[test]
 fn errors_render_into_a_caller_supplied_sink() {
-    let err = commands::secrets::execute(None).unwrap_err();
+    // Any error will do; this test is about the sink, not the command.
+    let err = commands::publish::execute(None).unwrap_err();
 
     let mut buf: Vec<u8> = Vec::new();
     Format::Json
