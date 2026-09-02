@@ -176,6 +176,27 @@ impl FileStore {
         Ok(out)
     }
 
+    /// Every secret held for `app`, values included.
+    ///
+    /// The one method that hands out values in bulk, and it exists for a
+    /// specific reason: the runtime's `SecretStore::resolve` can only fail with
+    /// a `runtime.*` code, and none of them means "this machine's secret file
+    /// is malformed". Loading eagerly moves that failure to before the sandbox
+    /// is built, where it can be a `cli.*` error naming the file — and makes
+    /// the per-spawn resolve infallible and free.
+    ///
+    /// It also bounds the work: one file read per run rather than one per name.
+    pub fn load(&self, app: &AppName) -> Result<BTreeMap<String, SecretValue>, CliError> {
+        let disk = self.read()?;
+        let Some(entries) = disk.get(app.as_str()) else {
+            return Ok(BTreeMap::new());
+        };
+        entries
+            .iter()
+            .map(|(k, v)| decode(v).map(|value| (k.clone(), value)))
+            .collect()
+    }
+
     /// Read the file, or an empty store when it does not exist yet.
     fn read(&self) -> Result<Disk, CliError> {
         let text = match std::fs::read_to_string(&self.path) {

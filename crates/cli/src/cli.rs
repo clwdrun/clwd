@@ -58,6 +58,14 @@ pub enum Command {
         #[arg(long, default_value = "/")]
         path: String,
 
+        /// The project whose `clwd.toml` names the app, for local secrets.
+        ///
+        /// Defaults to the current directory. When it declares `[app] name`,
+        /// the secrets stored under that name are available to the guest; when
+        /// it does not, the guest gets none.
+        #[arg(long, default_value = ".")]
+        project: std::path::PathBuf,
+
         /// Which sandbox to run in.
         ///
         /// Defaults to whatever the bundle's manifest declares. Passing this

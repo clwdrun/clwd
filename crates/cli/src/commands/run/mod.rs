@@ -27,7 +27,7 @@ use std::sync::Arc;
 use clwd_bundle::{BundleRef, Runtime};
 use clwd_runtime::wasm::{
     AppDataStore, DigestAsAppId, MemoryAppDataStore, MemoryBundleStore, MemorySecretStore,
-    SecretStore, WasmSandbox,
+    WasmSandbox,
 };
 use clwd_runtime::{
     Body, Caller, IdentityCtx, InvokeOptions, OrgId, Principal, Sandbox, SpawnOptions, SubjectId,
@@ -38,6 +38,7 @@ use crate::cli::Backend;
 use crate::error::CliError;
 
 mod output;
+mod secrets;
 pub use output::Outcome;
 
 /// The subject a local run presents.
@@ -65,6 +66,7 @@ pub fn execute(
     bundle: &Path,
     path: &str,
     backend: Option<Backend>,
+    project: &Path,
     progress: Option<&dyn Progress>,
 ) -> Result<Outcome, CliError> {
     let bytes = read_bundle(bundle)?;
@@ -94,7 +96,7 @@ pub fn execute(
     }
 
     let digest = BundleRef::of_stream(&bytes);
-    let sandbox = local_sandbox(&digest, bytes)?;
+    let sandbox = local_sandbox(&digest, bytes, project)?;
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -148,7 +150,11 @@ fn local_identity() -> IdentityCtx {
 }
 
 /// A sandbox whose every store lives in this process and dies with it.
-fn local_sandbox(digest: &BundleRef, bytes: Vec<u8>) -> Result<WasmSandbox, CliError> {
+fn local_sandbox(
+    digest: &BundleRef,
+    bytes: Vec<u8>,
+    project: &Path,
+) -> Result<WasmSandbox, CliError> {
     let bundles = MemoryBundleStore::new();
     bundles.insert(digest, bytes);
 
@@ -161,18 +167,32 @@ fn local_sandbox(digest: &BundleRef, bytes: Vec<u8>) -> Result<WasmSandbox, CliE
     //    store ever gains a disk, the resolver gains a real app identity in the
     //    same commit.
     //
-    // 2. Secrets are empty until #27 wires the OS keyring. Not a placeholder to
-    //    be filled in; an empty store is the correct local posture today.
+    // 2. Secrets come from the local file store when the project names an app,
+    //    and are empty otherwise. An unnamed project getting nothing is the
+    //    correct posture rather than a degraded one: with no `[app] name` there
+    //    is no namespace to read from, and guessing one from the directory
+    //    would let two unrelated checkouts share credentials.
     //
     // 3. Empty is indistinguishable from ungranted, by design. The WIT makes
     //    `secrets.get` return `none` for both "no such secret" and "not granted
     //    to this app", so a guest cannot probe the difference — locally or in
     //    production.
+    // The secret store and the app identity change together, exactly as note 1
+    // requires: the local store is persistent, so keying it on a digest that
+    // moves every build would orphan every secret on each rebuild.
+    let stores = match secrets::local_stores(project)? {
+        Some(stores) => stores,
+        None => secrets::LocalStores {
+            secrets: Arc::new(MemorySecretStore::new()),
+            identity: Arc::new(DigestAsAppId),
+        },
+    };
+
     WasmSandbox::with_stores(
         Arc::new(bundles),
-        Arc::new(MemorySecretStore::new()) as Arc<dyn SecretStore>,
+        stores.secrets,
         Arc::new(MemoryAppDataStore::new()) as Arc<dyn AppDataStore>,
-        Arc::new(DigestAsAppId),
+        stores.identity,
     )
     .map_err(from_runtime)
 }

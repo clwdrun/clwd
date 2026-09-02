@@ -103,7 +103,8 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
             bundle,
             path,
             backend,
-        } => run(bundle, path, *backend, progress, format, out),
+            project,
+        } => run(bundle, path, *backend, project, progress, format, out),
         Command::Dev => emit(format, commands::dev::execute(progress), out),
         Command::Build {
             project,
@@ -163,11 +164,12 @@ fn run(
     bundle: &std::path::Path,
     path: &str,
     backend: Option<clwd_cli::cli::Backend>,
+    project: &std::path::Path,
     progress: Option<&dyn Progress>,
     format: Format,
     out: &mut dyn Write,
 ) -> Result<(), CliError> {
-    let outcome = commands::run::execute(bundle, path, backend, progress)?;
+    let outcome = commands::run::execute(bundle, path, backend, project, progress)?;
 
     // Human mode narrates to stderr: which identity the app saw, and the status.
     // An app author reading `ctx().caller()` should not have to infer what their
@@ -195,6 +197,7 @@ fn run(
     _bundle: &std::path::Path,
     _path: &str,
     _backend: Option<clwd_cli::cli::Backend>,
+    _project: &std::path::Path,
     _progress: Option<&dyn Progress>,
     _format: Format,
     _out: &mut dyn Write,

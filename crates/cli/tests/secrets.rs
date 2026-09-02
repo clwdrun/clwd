@@ -274,3 +274,80 @@ fn visit(dir: &Path, found: &mut Vec<PathBuf>) {
         }
     }
 }
+
+/// The injection set is the intersection of what the manifest declares and what
+/// the store holds — conformance R5.2 and R5.3, asserted on the *local* path.
+///
+/// The conformance suite covers this against `MemorySecretStore`. That is a
+/// different store, so it proves nothing about this one; a bug that let the
+/// file store return an undeclared secret would leave the suite green. Both
+/// secrets below live in the same namespace, so the manifest is the only thing
+/// separating them.
+#[cfg(feature = "run")]
+#[test]
+fn a_guest_sees_only_the_secrets_its_manifest_declared() {
+    use clwd_bundle::{Capabilities, Limits, Runtime, build};
+
+    /// The reference guest, which answers `/secret/{name}` with the value or
+    /// the literal `absent`.
+    const GUEST: &[u8] = include_bytes!("../../runtime/tests/fixtures/app.wasm");
+
+    let p = Project::new("intersection");
+
+    // Held: both. Declared: one.
+    let set = p.run(&["secrets", "set", "api-token"], Some(b"DECLARED-VALUE"));
+    assert!(set.status.success(), "{}", text(&set.stderr));
+    let set = p.run(
+        &["secrets", "set", "other-token"],
+        Some(b"UNDECLARED-VALUE"),
+    );
+    assert!(set.status.success(), "{}", text(&set.stderr));
+
+    let encoded = build(
+        Runtime::Wasm,
+        "app.wasm",
+        Capabilities {
+            version: 1,
+            egress: Vec::new(),
+            // `api-token` only. `other-token` is held but not declared.
+            secrets: vec!["api-token".to_owned()],
+            storage_namespaces: Vec::new(),
+            limits: Limits {
+                cpu_ms: 5_000,
+                memory_mb: 128,
+            },
+        },
+        vec![clwd_bundle::File {
+            path: "app.wasm".to_owned(),
+            data: GUEST.to_vec(),
+            executable: false,
+        }],
+    )
+    .expect("the reference guest makes a valid bundle");
+    let bundle = p.root.join("app.clwd");
+    std::fs::write(&bundle, encoded.bytes).expect("write bundle");
+    let bundle = bundle.to_string_lossy().into_owned();
+
+    // ---- POSITIVE CONTROL: the declared one really does arrive ----
+    let declared = p.run(&["run", &bundle, "--path", "/secret/api-token"], None);
+    assert!(declared.status.success(), "{}", text(&declared.stderr));
+    assert_eq!(
+        text(&declared.stdout).trim(),
+        "DECLARED-VALUE",
+        "the declared secret did not reach the guest, so the absence below \
+         would prove nothing"
+    );
+
+    // ---- and the undeclared one does not ----
+    let undeclared = p.run(&["run", &bundle, "--path", "/secret/other-token"], None);
+    assert!(undeclared.status.success(), "{}", text(&undeclared.stderr));
+    assert_eq!(
+        text(&undeclared.stdout).trim(),
+        "absent",
+        "a secret the manifest did not declare reached the guest"
+    );
+    assert!(
+        !text(&undeclared.stdout).contains("UNDECLARED-VALUE"),
+        "the undeclared value leaked into the response"
+    );
+}

@@ -42,6 +42,7 @@ fn run_is_callable_in_process_and_returns_a_typed_error() {
         std::path::Path::new("/nonexistent/nowhere.clwd"),
         "/",
         None,
+        std::path::Path::new("."),
         None,
     )
     .expect_err("there is no bundle at that path");
