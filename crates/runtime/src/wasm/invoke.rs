@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 use http_body_util::BodyExt;
 use wasmtime::{Engine, Store, UpdateDeadline};
+use wasmtime_wasi_http::WasiHttpView;
 use wasmtime_wasi_http::p2::bindings::http::types::Scheme;
 use wasmtime_wasi_http::p2::body::HyperIncomingBody;
-use wasmtime_wasi_http::WasiHttpView;
 
 use crate::call::{Body, Request, RequestId, Response};
 use crate::error::{Error, Phase, Result};

@@ -35,9 +35,9 @@
 use async_trait::async_trait;
 use clwd_bundle::BundleRef;
 
+use crate::Sandbox;
 use crate::handle::InstanceId;
 use crate::identity::Caller;
-use crate::Sandbox;
 
 /// One backend, wired up so the suite can build it and observe it.
 ///

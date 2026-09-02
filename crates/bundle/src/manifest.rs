@@ -256,7 +256,7 @@ impl Manifest {
             other => {
                 return Err(Error::RuntimeUnknown {
                     found: other.to_owned(),
-                })
+                });
             }
         };
         let entrypoint = get_str(app, "entrypoint", "app.entrypoint")?;

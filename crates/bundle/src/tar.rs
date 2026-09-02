@@ -192,13 +192,13 @@ pub fn read(stream: &[u8]) -> Result<Vec<Entry>, Error> {
         }
 
         // Step 7: ordering, checked against the entry just before this one.
-        if let Some(previous) = entries.last() {
-            if path.as_bytes() <= previous.path.as_bytes() {
-                return Err(Error::EntriesNotSorted {
-                    previous: previous.path.clone(),
-                    current: path,
-                });
-            }
+        if let Some(previous) = entries.last()
+            && path.as_bytes() <= previous.path.as_bytes()
+        {
+            return Err(Error::EntriesNotSorted {
+                previous: previous.path.clone(),
+                current: path,
+            });
         }
 
         entries.push(Entry {

@@ -17,7 +17,7 @@ use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpHooks, WasiHttpVi
 use crate::identity::{Caller, IdentityCtx, Role};
 use crate::logs::LogStreamKind;
 use crate::wasm::budget::Budget;
-use crate::wasm::data::{validate_key, AppDataStore, AppId, MIN_VALUE_LIMIT};
+use crate::wasm::data::{AppDataStore, AppId, MIN_VALUE_LIMIT, validate_key};
 use crate::wasm::limits::BudgetLimiter;
 use crate::wasm::logs::LogSink;
 use std::collections::HashMap;

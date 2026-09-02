@@ -35,8 +35,8 @@ pub use manifest::Source;
 pub use size::{BundleSize, ComponentSize, Verdict};
 pub use toolchain::Toolchain;
 
-use crate::error::CliError;
 use crate::Progress;
+use crate::error::CliError;
 
 /// The bundle extension. One artifact, one suffix.
 const BUNDLE_EXT: &str = "clwd";
@@ -143,7 +143,7 @@ pub fn run(options: &Options, progress: Option<&dyn Progress>) -> Result<Built, 
         Err(e) => {
             return Err(CliError::ManifestInvalid {
                 what: format!("{} could not be read: {e}", manifest_path.display()),
-            })
+            });
         }
     };
 

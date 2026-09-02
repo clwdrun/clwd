@@ -20,7 +20,7 @@ use std::time::Duration;
 use futures_core::Stream;
 
 use clwd_runtime::conformance::{
-    requirement, BackendUnderTest, FixtureKind, InstanceObservation, WorldSpec, REQUIREMENTS,
+    BackendUnderTest, FixtureKind, InstanceObservation, REQUIREMENTS, WorldSpec, requirement,
 };
 use clwd_runtime::handle::InstanceId;
 use clwd_runtime::identity::{Caller, GroupId, IdentityCtx, OrgId, Principal, Role, SubjectId};

@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use clwd_bundle::{build, Capabilities, Encoded, Error, File, Limits, Runtime};
+use clwd_bundle::{Capabilities, Encoded, Error, File, Limits, Runtime, build};
 
 /// The component-model preamble: the smallest valid `runtime = "wasm"` entry.
 pub const COMPONENT: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00];

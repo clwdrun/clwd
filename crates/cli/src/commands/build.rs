@@ -6,9 +6,9 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::Progress;
 use crate::build::{self, Built, Options};
 use crate::error::CliError;
-use crate::Progress;
 
 pub fn execute(
     project: &Path,

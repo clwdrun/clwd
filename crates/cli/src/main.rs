@@ -10,7 +10,7 @@ use std::pin::pin;
 use std::process::ExitCode;
 
 use clap::Parser;
-use clwd_cli::{commands, Cli, CliError, Command, Format, Progress};
+use clwd_cli::{Cli, CliError, Command, Format, Progress, commands};
 use futures_core::Stream;
 use serde::Serialize;
 

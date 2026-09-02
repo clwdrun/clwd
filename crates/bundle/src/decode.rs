@@ -4,7 +4,7 @@
 use crate::digest::{BundleRef, Digest};
 use crate::encode::File;
 use crate::error::Error;
-use crate::manifest::{Manifest, Runtime, FILENAME};
+use crate::manifest::{FILENAME, Manifest, Runtime};
 use crate::tar;
 
 /// The component-model preamble: `\0asm`, version 0x000D, layer 0x0001. §6.1.
@@ -28,13 +28,13 @@ pub struct Bundle {
 pub fn decode(stream: &[u8], expected: Option<BundleRef>) -> Result<Bundle, Error> {
     // Step 0.
     let digest = BundleRef::of_stream(stream);
-    if let Some(expected) = expected {
-        if expected != digest {
-            return Err(Error::DigestMismatch {
-                expected: expected.to_string(),
-                actual: digest.to_string(),
-            });
-        }
+    if let Some(expected) = expected
+        && expected != digest
+    {
+        return Err(Error::DigestMismatch {
+            expected: expected.to_string(),
+            actual: digest.to_string(),
+        });
     }
 
     // Steps 1 to 8.

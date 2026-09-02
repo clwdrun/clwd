@@ -4,7 +4,7 @@
 mod common;
 use common::*;
 
-use clwd_bundle::{decode, File};
+use clwd_bundle::{File, decode};
 
 fn reject(bytes: &[u8], code: &str) {
     assert_code(decode(bytes, None), code);

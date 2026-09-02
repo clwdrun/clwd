@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use clwd_bundle::{build, Capabilities, Limits, Runtime};
+use clwd_bundle::{Capabilities, Limits, Runtime, build};
 
 /// The reference guest from the runtime's fixtures: a real component that
 /// answers `/`, `/trap`, `/spin` and more. Reused rather than rebuilt — there is
