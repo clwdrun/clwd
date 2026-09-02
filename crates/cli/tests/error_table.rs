@@ -69,11 +69,10 @@ enum Recovery {
     FixInput,
     /// The caller is not allowed to do this, or a credential is missing.
     ///
-    /// No code carries this yet — nothing in the CLI authenticates. It is named
-    /// now because the vocabulary is what an agent branches on, and a category
-    /// appearing for the first time alongside the first auth code is a silent
-    /// change to a published set. `every_category_has_a_distinct_wire_name`
-    /// keeps it honest in the meantime.
+    /// Carried by `cli.toolchain_missing` since #28: a tool the build needs is
+    /// absent from the machine, which the caller fixes by installing it rather
+    /// than by changing the project. Nothing in the CLI authenticates yet, so
+    /// the credential half of this category is still unused.
     FixPermissions,
     /// The artifact is damaged or stale. Build it again.
     Rebuild,
@@ -113,15 +112,17 @@ enum Reach {
 impl Reach {
     /// Reachability for a code, from its namespace.
     ///
-    /// `cli.*` is always reachable — the CLI owns it. `runtime.*` and `bundle.*`
-    /// arrive through `CliError::Runtime`, the delegating variant behind the
-    /// `run` feature, so they are reachable exactly when a command drives the
-    /// sandbox. `clwd run` (#25) is that command.
+    /// `cli.*` is always reachable — the CLI owns it. `runtime.*` arrives through
+    /// `CliError::Runtime`, the delegating variant behind the `run` feature, so
+    /// it is reachable exactly when a command drives the sandbox; `clwd run`
+    /// (#25) is that command. `bundle.*` arrived the same way until #28 gave
+    /// `CliError` a direct `Bundle` variant, so it is now reachable with the
+    /// feature off too — `clwd build` writes a bundle without a sandbox.
     fn of(code: &str) -> Self {
         match code.split_once('.').expect("codes are namespaced").0 {
             "cli" => Self::Now,
-            // Delegated through `CliError::Runtime`. Before #25 nothing
-            // constructed that variant, so every one of these was unreachable.
+            // Before #25 nothing constructed a delegating variant, so every one
+            // of these was unreachable.
             "runtime" | "bundle" => Self::Now,
             other => panic!("no reachability rule for the {other:?} namespace"),
         }
@@ -192,6 +193,26 @@ const TABLE: &[Row] = &[
         recovery: "The message names the offending key or file and what is wrong with it. \
                    Correct that line. Do not delete the file to start over — it holds the \
                    app's capability grants, and an empty one grants nothing at all.",
+        action: Recovery::FixInput,
+    },
+    Row {
+        code: "cli.toolchain_missing",
+        meaning: "A program the build needs is not installed, or is installed but will not \
+                  run on this machine. clwd shells out to a small number of external tools \
+                  and does not vendor them, so a fresh machine can be missing one.",
+        recovery: "The message names the tool and the exact command that installs it. Run \
+                   that command, then run the build again. Nothing in the project needs to \
+                   change.",
+        action: Recovery::FixPermissions,
+    },
+    Row {
+        code: "cli.build_failed",
+        meaning: "A step of the build ran and reported failure. The commonest cause is that \
+                  the app does not compile; the compiler's own output says why. This code \
+                  means the step failed, not that clwd malfunctioned.",
+        recovery: "Read the output printed above the error — it comes from the step that \
+                   failed and is more specific than anything clwd can add. Fix what it \
+                   reports, then build again.",
         action: Recovery::FixInput,
     },
     Row {

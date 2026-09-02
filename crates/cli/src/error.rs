@@ -149,6 +149,25 @@ define_cli_error! {
     #[error("{what}")]
     ManifestInvalid { what: String } => "cli.manifest_invalid";
 
+    /// A tool the build needs is absent, or present and unrunnable.
+    // The field is `cause`, not `source`: thiserror treats a field named
+    // `source` as the error source and requires it to implement `Error`. This
+    // one is the operating system's message, already rendered.
+    #[error("{tool} could not be run: {cause}\ninstall it with: {install}")]
+    ToolchainMissing {
+        tool: &'static str,
+        install: &'static str,
+        cause: String,
+    } => "cli.toolchain_missing";
+
+    /// A build step ran and failed. The step names which one, so a failure
+    /// deep in a subprocess does not read as a defect in clwd.
+    #[error("{step} failed: {detail}")]
+    BuildFailed {
+        step: &'static str,
+        detail: String,
+    } => "cli.build_failed";
+
     /// Last resort only. Never returned where a specific variant fits: an
     /// `anyhow` source inside a library error type is tolerable as a genuine
     /// fallback and corrosive as a default.
@@ -214,6 +233,14 @@ impl CliError {
             Self::ManifestInvalid { .. } => {
                 Some("check clwd.toml against the schema in docs/spec/bundle-v1.md §5")
             }
+            // The install command is in the message rather than here: it
+            // differs per tool, and a hint is one static string per code.
+            Self::ToolchainMissing { .. } => {
+                Some("install the tool the message names, then run the command again")
+            }
+            Self::BuildFailed { .. } => {
+                Some("the step's own output is above; fix what it reports and build again")
+            }
             Self::Internal { .. } => Some("this is a bug in clwd; please report it"),
         }
     }
@@ -248,6 +275,8 @@ impl CliError {
             | Self::NotImplemented { .. }
             | Self::Config { .. }
             | Self::ManifestInvalid { .. }
+            | Self::ToolchainMissing { .. }
+            | Self::BuildFailed { .. }
             | Self::Internal { .. } => false,
         }
     }
@@ -268,6 +297,15 @@ pub(crate) mod tests {
             CliError::NotImplemented { command: "x" },
             CliError::Config { what: "x".into() },
             CliError::ManifestInvalid { what: "x".into() },
+            CliError::ToolchainMissing {
+                tool: "x",
+                install: "x",
+                cause: "x".into(),
+            },
+            CliError::BuildFailed {
+                step: "x",
+                detail: "x".into(),
+            },
             CliError::Internal {
                 source: anyhow::anyhow!("x"),
             },

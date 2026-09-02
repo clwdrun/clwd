@@ -6,6 +6,8 @@
 
 pub mod manifest;
 pub mod size;
+pub mod toolchain;
 
 pub use manifest::Source;
 pub use size::{BundleSize, ComponentSize, Verdict};
+pub use toolchain::Toolchain;
