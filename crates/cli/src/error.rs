@@ -14,13 +14,23 @@
 //! prefix names the subsystem that made the decision — a guarantee
 //! `docs/error-codes.md` publishes and the platform mirrors across the seam.
 //!
-//! **One delegating variant, not two.** `bundle.*` codes already arrive through
-//! `clwd_runtime::Error::Bundle`, which delegates them the same way, so a second
-//! variant wrapping `clwd_bundle::Error` directly would be a second path to the
-//! same code that no caller could distinguish.
+//! **Two delegating variants, and the second one is load-bearing.** Until #28
+//! there was one: `bundle.*` codes arrived through `clwd_runtime::Error::Bundle`,
+//! and a variant wrapping `clwd_bundle::Error` directly was refused as a second
+//! path to a code no caller could distinguish.
 //!
-//! The variant is behind `feature = "run"`, because the crate it borrows its
-//! catalogue from is.
+//! `clwd build` breaks that. It encodes a bundle with no sandbox anywhere in the
+//! picture, so routing its failures through `clwd_runtime::Error` would make
+//! `build` require `feature = "run"` — which is the feature that carries
+//! wasmtime. A command that compiles a component would then drag a runtime into
+//! the CLI to report that a manifest was malformed, and `cli-deps` would fail on
+//! it, correctly.
+//!
+//! So `Bundle` is now direct and unconditional, and `Runtime` stays behind
+//! `run`. The original worry does not survive contact with what a caller
+//! actually sees: both paths emit the identical code string, and the code is the
+//! contract. What matters is that a `bundle.*` code is never rewritten into a
+//! `cli.*` one, and two variants preserve that as well as one did.
 
 /// Declares `CliError` and, from the same input, the list of every code it can
 /// produce. A variant cannot be added without a code, which is what makes the
@@ -108,6 +118,8 @@ define_cli_error! {
         // them, and a doc comment on a match arm is an unused-doc warning.
         #[cfg(feature = "run")]
         Runtime { source: clwd_runtime::Error };
+
+        Bundle { source: clwd_bundle::Error };
     }
 
     owned {
@@ -126,6 +138,16 @@ define_cli_error! {
     /// Local configuration is missing, unreadable, or self-contradictory.
     #[error("configuration error: {what}")]
     Config { what: String } => "cli.config";
+
+    /// The project's `clwd.toml` is malformed, contradictory, or grants
+    /// something the format does not accept.
+    ///
+    /// Distinct from `cli.config` because the recovery differs. `cli.config`
+    /// can suggest deleting the file to fall back to defaults; doing that to a
+    /// manifest discards the author's capability grants, and for the
+    /// member-collision case it is not the fix at all.
+    #[error("{what}")]
+    ManifestInvalid { what: String } => "cli.manifest_invalid";
 
     /// Last resort only. Never returned where a specific variant fits: an
     /// `anyhow` source inside a library error type is tolerable as a genuine
@@ -147,9 +169,9 @@ define_cli_error! {
 /// Path rather than URL while the repository is private; this becomes a docs
 /// URL when it goes public at MVP.
 ///
-/// Gated with the variant that uses it: without `run` there is nothing to
-/// delegate, so the constant would be dead rather than merely unused.
-#[cfg(feature = "run")]
+/// Ungated since #28. It was behind `run` when `Runtime` was the only variant
+/// using it; `Bundle` is unconditional, so with the feature off there is still
+/// something to delegate and the constant is still live.
 const DELEGATED_HINT: &str = "see docs/error-codes.md for this code's meaning and how to recover";
 
 impl CliError {
@@ -178,6 +200,7 @@ impl CliError {
             // absence, not deciding it should be absent.
             #[cfg(feature = "run")]
             Self::Runtime { .. } => Some(DELEGATED_HINT),
+            Self::Bundle { .. } => Some(DELEGATED_HINT),
             Self::InvalidArgument { .. } => Some("run `clwd <command> --help` for accepted values"),
             Self::NotFound { .. } => Some(
                 "check the name for typos, and run the matching `list` command to see what exists",
@@ -187,6 +210,9 @@ impl CliError {
             }
             Self::Config { .. } => {
                 Some("check the config file the message names; delete it to start from defaults")
+            }
+            Self::ManifestInvalid { .. } => {
+                Some("check clwd.toml against the schema in docs/spec/bundle-v1.md §5")
             }
             Self::Internal { .. } => Some("this is a bug in clwd; please report it"),
         }
@@ -212,10 +238,16 @@ impl CliError {
             // deliberate and visible rather than papered over.
             #[cfg(feature = "run")]
             Self::Runtime { .. } => false,
+            // Forwarded, not guessed. `clwd_bundle::Error` does expose
+            // `retryable()`, so the crate that owns the code makes the claim and
+            // this one repeats it. If a `bundle.*` code ever becomes retryable,
+            // that decision lands here without an edit.
+            Self::Bundle { source } => source.retryable(),
             Self::InvalidArgument { .. }
             | Self::NotFound { .. }
             | Self::NotImplemented { .. }
             | Self::Config { .. }
+            | Self::ManifestInvalid { .. }
             | Self::Internal { .. } => false,
         }
     }
@@ -235,6 +267,7 @@ pub(crate) mod tests {
             CliError::NotFound { what: "x".into() },
             CliError::NotImplemented { command: "x" },
             CliError::Config { what: "x".into() },
+            CliError::ManifestInvalid { what: "x".into() },
             CliError::Internal {
                 source: anyhow::anyhow!("x"),
             },

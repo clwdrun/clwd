@@ -181,6 +181,20 @@ const TABLE: &[Row] = &[
         action: Recovery::FixInput,
     },
     Row {
+        code: "cli.manifest_invalid",
+        meaning: "The `clwd.toml` in the project being built says something clwd cannot \
+                  act on. Common causes: a key spelled wrongly, a capability granted twice, \
+                  a grant that names nothing, a runtime clwd does not have, or the project's \
+                  own `clwd.toml` swept into the files being bundled — where it would collide \
+                  with the one the build writes. Unknown keys are refused rather than \
+                  skipped: most keys here grant a capability, and one quietly ignored is a \
+                  permission the author believes they have and does not.",
+        recovery: "The message names the offending key or file and what is wrong with it. \
+                   Correct that line. Do not delete the file to start over — it holds the \
+                   app's capability grants, and an empty one grants nothing at all.",
+        action: Recovery::FixInput,
+    },
+    Row {
         code: "cli.internal",
         meaning: "clwd hit a problem it does not have a specific explanation for. This is \
                   always a defect in clwd rather than a mistake by the caller.",

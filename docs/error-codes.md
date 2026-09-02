@@ -49,6 +49,7 @@ retryable, a per-code mapping would be a second compatibility surface for no gai
 | [`cli.not_found`](#clinot_found) | `fix_input` | yes |
 | [`cli.not_implemented`](#clinot_implemented) | `report_bug` | yes |
 | [`cli.config`](#cliconfig) | `fix_input` | yes |
+| [`cli.manifest_invalid`](#climanifest_invalid) | `fix_input` | yes |
 | [`cli.internal`](#cliinternal) | `report_bug` | yes |
 | [`runtime.bundle_not_found`](#runtimebundle_not_found) | `fix_input` | yes |
 | [`runtime.deadline_exceeded`](#runtimedeadline_exceeded) | `retry` | yes |
@@ -128,6 +129,14 @@ The command exists and is spelled correctly, but has not been built yet. It appe
 clwd could not read its own settings for this machine. Either the config file is not where clwd expects it, or it is there but cannot be parsed, or two settings in it contradict each other. This usually follows a hand-edit, an interrupted `clwd init`, or a config written by a different version of clwd.
 
 **What to do:** The message says which setting or file was at fault. If a file is present, correct it; deleting it is always safe, because clwd falls back to its defaults and writes a fresh one. If the message names a setting rather than a file, run `clwd init` to regenerate the config.
+
+*Recovery:* `fix_input` · *Reachable:* yes
+
+### `cli.manifest_invalid`
+
+The `clwd.toml` in the project being built says something clwd cannot act on. Common causes: a key spelled wrongly, a capability granted twice, a grant that names nothing, a runtime clwd does not have, or the project's own `clwd.toml` swept into the files being bundled — where it would collide with the one the build writes. Unknown keys are refused rather than skipped: most keys here grant a capability, and one quietly ignored is a permission the author believes they have and does not.
+
+**What to do:** The message names the offending key or file and what is wrong with it. Correct that line. Do not delete the file to start over — it holds the app's capability grants, and an empty one grants nothing at all.
 
 *Recovery:* `fix_input` · *Reachable:* yes
 
