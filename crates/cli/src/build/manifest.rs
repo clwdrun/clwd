@@ -57,6 +57,12 @@ pub struct Source {
 #[serde(deny_unknown_fields)]
 struct AppSection {
     entrypoint: Option<String>,
+    /// The app's name, which is what its secrets are scoped to.
+    ///
+    /// CLI-side only: it is not a bundle-manifest field, because the bundle
+    /// format assigns no meaning to an app's name and adding one would be a
+    /// spec change for something only local tooling needs.
+    name: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, PartialEq, Eq)]
@@ -135,6 +141,16 @@ impl Source {
             .as_ref()
             .and_then(|a| a.entrypoint.as_deref())
             .unwrap_or(fallback)
+    }
+
+    /// The app's declared name, if it has one.
+    ///
+    /// No fallback to the directory name, deliberately: secrets are scoped to
+    /// this, and two projects sharing a namespace should be something an author
+    /// chose rather than a consequence of where a repository was cloned.
+    #[must_use]
+    pub fn app_name(&self) -> Option<&str> {
+        self.app.as_ref().and_then(|a| a.name.as_deref())
     }
 
     /// The capability set to seal into the bundle, defaults applied.

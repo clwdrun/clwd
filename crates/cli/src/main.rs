@@ -10,7 +10,7 @@ use std::pin::pin;
 use std::process::ExitCode;
 
 use clap::Parser;
-use clwd_cli::{Cli, CliError, Command, Format, Progress, commands};
+use clwd_cli::{Cli, CliError, Command, Format, Progress, SecretsAction, commands};
 use futures_core::Stream;
 use serde::Serialize;
 
@@ -116,7 +116,7 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
         ),
         Command::Publish => emit(format, commands::publish::execute(progress), out),
         Command::Logs { follow } => logs(*follow, progress, format, out),
-        Command::Secrets => emit(format, commands::secrets::execute(progress), out),
+        Command::Secrets { action, project } => secrets(action, project, format, out),
         Command::Mcp => emit(format, commands::mcp::execute(progress), out),
     };
 
@@ -203,6 +203,53 @@ fn run(
 }
 
 /// Render one successful value, or pass the error up to `main` to render.
+/// `clwd secrets`, which needs its own arm for one reason: `get` writes a raw
+/// secret rather than a rendered value.
+///
+/// Every other subcommand goes through `emit`, which renders a `Display` or a
+/// `Serialize`. A secret is neither — it is bytes the caller asked for, and
+/// putting it through a renderer would mean giving `SecretValue` a `Display`,
+/// which is exactly the thing that stops it leaking everywhere else.
+fn secrets(
+    action: &SecretsAction,
+    project: &std::path::Path,
+    format: Format,
+    out: &mut dyn Write,
+) -> Result<(), CliError> {
+    match action {
+        SecretsAction::Set { name } => {
+            let mut stdin = io::stdin().lock();
+            emit(
+                format,
+                commands::secrets::set(project, name, &mut stdin),
+                out,
+            )
+        }
+        SecretsAction::List => emit(format, commands::secrets::list(project), out),
+        SecretsAction::Rm { name } => emit(format, commands::secrets::remove(project, name), out),
+        SecretsAction::Get { name } => {
+            let value = commands::secrets::get(project, name)?;
+            match format {
+                // Raw bytes, nothing else — so `clwd secrets get X > file`
+                // produces the secret and not a rendering of it. No trailing
+                // newline: a newline appended to a key is a corrupt key.
+                Format::Human => out.write_all(value.expose()).map_err(internal),
+                // Base64 in the envelope, because JSON cannot carry arbitrary
+                // bytes and a secret is `list<u8>`. This is the one place a
+                // value is meant to reach output; `list` never does.
+                Format::Json => {
+                    let encoded = base64::Engine::encode(
+                        &base64::engine::general_purpose::STANDARD,
+                        value.expose(),
+                    );
+                    let body = serde_json::json!({ "value_base64": encoded });
+                    writeln!(out, "{body}").map_err(internal)
+                }
+            }
+        }
+    }
+}
+
 fn emit<T>(format: Format, result: Result<T, CliError>, out: &mut dyn Write) -> Result<(), CliError>
 where
     T: Display + Serialize,

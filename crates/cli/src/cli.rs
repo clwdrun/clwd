@@ -93,8 +93,44 @@ pub enum Command {
         #[arg(long)]
         follow: bool,
     },
-    /// Manage secrets for an app
-    Secrets,
+    /// Manage secrets for an app, for local development
+    Secrets {
+        #[command(subcommand)]
+        action: SecretsAction,
+
+        /// The project whose `clwd.toml` names the app. Defaults to the
+        /// current directory.
+        #[arg(long, default_value = ".", global = true)]
+        project: std::path::PathBuf,
+    },
     /// Expose these commands over the Model Context Protocol
     Mcp,
+}
+
+/// What `clwd secrets` can do.
+///
+/// There is no `set --value`. A value on the command line lands in shell
+/// history and in `ps` output for every process on the machine, and it is the
+/// convenient spelling, so offering it means it is the one people use. Values
+/// arrive on stdin, which also means a key or certificate needs no encoding
+/// decision — stdin is bytes and the interface is `list<u8>`.
+#[derive(clap::Subcommand, Debug)]
+pub enum SecretsAction {
+    /// Store a secret, reading its value from stdin
+    Set {
+        /// The secret's name
+        name: String,
+    },
+    /// Write a secret's value to stdout
+    Get {
+        /// The secret's name
+        name: String,
+    },
+    /// List the names of this app's secrets. Never their values.
+    List,
+    /// Remove a secret
+    Rm {
+        /// The secret's name
+        name: String,
+    },
 }
