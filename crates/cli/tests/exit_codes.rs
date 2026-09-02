@@ -47,10 +47,12 @@ fn code(o: &Output) -> i32 {
 /// point: 2 means nothing was attempted.
 #[test]
 fn a_command_that_ran_and_failed_exits_one() {
-    // A command with no body: it dispatches, then fails. `run` is no longer
-    // usable here — it requires a bundle argument, so `clwd run` alone is a
-    // usage error and exits 2, which is the distinction this test draws.
-    let out = run(&["build"]);
+    // A command that dispatches and then fails on its own terms. The path does
+    // not exist, so it fails immediately and for a reason of its own rather
+    // than clap's — which is the distinction this test draws. A bare `build`
+    // would compile the whole workspace for wasm32-wasip2 first, taking minutes
+    // and passing only because that build happens to fail.
+    let out = run(&["build", "/nonexistent/clwd-no-such-project"]);
     assert_eq!(code(&out), 1, "stderr: {}", stderr(&out));
 }
 
@@ -95,8 +97,10 @@ fn help_and_version_succeed_in_both_renderers() {
 #[test]
 fn every_failing_json_path_produces_the_envelope() {
     for args in [
-        // A command that ran and failed.
-        vec!["--json", "build"],
+        // A command that ran and failed. The path does not exist, so the
+        // failure is fast, deterministic, and genuinely the command's own
+        // rather than clap's.
+        vec!["--json", "build", "/nonexistent/clwd-no-such-project"],
         // Clap paths: unknown subcommand, unknown flag, no subcommand.
         vec!["--json", "nosuchcommand"],
         vec!["--json", "logs", "--nosuchflag"],
@@ -133,8 +137,8 @@ fn every_failing_json_path_produces_the_envelope() {
 #[test]
 fn failures_never_write_to_stdout() {
     for args in [
-        vec!["build"],
-        vec!["--json", "build"],
+        vec!["build", "/nonexistent/clwd-no-such-project"],
+        vec!["--json", "build", "/nonexistent/clwd-no-such-project"],
         vec!["nosuchcommand"],
         vec!["--json", "nosuchcommand"],
         vec!["--json", "logs", "--nosuchflag"],
@@ -152,7 +156,7 @@ fn failures_never_write_to_stdout() {
 /// never have to parse any.
 #[test]
 fn the_human_renderer_is_not_json() {
-    let out = run(&["build"]);
+    let out = run(&["build", "/nonexistent/clwd-no-such-project"]);
     let err = stderr(&out);
     assert!(err.starts_with("error: "), "got {err:?}");
     assert!(

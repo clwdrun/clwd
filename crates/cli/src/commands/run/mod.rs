@@ -205,10 +205,11 @@ fn from_runtime(source: clwd_runtime::Error) -> CliError {
     CliError::Runtime { source }
 }
 
-/// Delegate a bundle failure through the runtime's own delegating variant, so
-/// there is one path from a `bundle.*` code to the envelope rather than two.
+/// Surface a bundle failure with its own code intact.
+///
+/// Direct rather than wrapped in `clwd_runtime::Error`: since #28 `CliError` has
+/// its own `Bundle` variant, so there is no reason to route a failure the bundle
+/// format decided through a runtime that had nothing to do with it.
 fn from_bundle(source: clwd_bundle::Error) -> CliError {
-    CliError::Runtime {
-        source: clwd_runtime::Error::from(source),
-    }
+    CliError::Bundle { source }
 }

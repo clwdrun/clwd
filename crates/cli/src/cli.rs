@@ -69,7 +69,22 @@ pub enum Command {
     /// Run an app locally, reloading it as sources change
     Dev,
     /// Build an app into a deployable bundle
-    Build,
+    Build {
+        /// The project to build. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        project: std::path::PathBuf,
+
+        /// Where to write the bundle. Defaults beside the component.
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+
+        /// Skip stripping custom sections.
+        ///
+        /// Costs about 9% in size. Worth it when something downstream wants the
+        /// component's own name section, and harmless otherwise.
+        #[arg(long)]
+        no_optimize: bool,
+    },
     /// Publish a built bundle
     Publish,
     /// Stream logs for an app

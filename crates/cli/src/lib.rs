@@ -6,6 +6,7 @@
 //! must emit nothing on stdout but JSON-RPC, and `--json` (#31) needs errors to
 //! still be typed here so it can emit a stable code for each one.
 
+pub mod build;
 pub mod cli;
 pub mod commands;
 pub mod error;
