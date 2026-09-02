@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use clwd_bundle::{build, BundleRef, Capabilities, Limits, Runtime};
+use clwd_bundle::{BundleRef, Capabilities, Limits, Runtime, build};
 use clwd_runtime::identity::{Caller, IdentityCtx, OrgId, Principal, SubjectId};
 
 /// The component-model preamble: the smallest valid `runtime = "wasm"` entry.

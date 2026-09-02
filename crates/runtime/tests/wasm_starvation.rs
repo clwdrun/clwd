@@ -21,8 +21,8 @@
 mod wasm_common;
 use wasm_common::*;
 
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 use std::time::Duration;
 
 use clwd_runtime::{InvokeOptions, Sandbox, SpawnOptions};

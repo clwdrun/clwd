@@ -10,8 +10,8 @@ use std::sync::Arc;
 use clwd_bundle::BundleRef;
 use parking_lot::Mutex;
 use tokio::sync::OnceCell;
-use wasmtime::component::{Component, Linker};
 use wasmtime::Engine;
+use wasmtime::component::{Component, Linker};
 use wasmtime_wasi_http::p2::bindings::ProxyPre;
 
 use crate::error::Error;

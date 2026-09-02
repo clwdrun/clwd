@@ -223,9 +223,11 @@ mod tests {
             ComponentSize::from_bytes(COMPONENT_WARN).verdict(),
             Verdict::Ok
         );
-        assert!(!ComponentSize::from_bytes(COMPONENT_CEILING)
-            .verdict()
-            .is_fatal());
+        assert!(
+            !ComponentSize::from_bytes(COMPONENT_CEILING)
+                .verdict()
+                .is_fatal()
+        );
     }
 
     /// The two types must not share thresholds. A bundle carrying assets is

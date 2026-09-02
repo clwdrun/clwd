@@ -5,7 +5,7 @@
 //! normalizing on the way in, one source tree would produce two different
 //! bundle digests on two machines.
 
-use unicode_normalization::{is_nfc, UnicodeNormalization};
+use unicode_normalization::{UnicodeNormalization, is_nfc};
 
 use crate::error::Error;
 

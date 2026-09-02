@@ -217,12 +217,16 @@ async fn logs_carry_the_request_id_and_the_stream_they_came_from() {
             "every line from an invocation carries its request id"
         );
     }
-    assert!(lines
-        .iter()
-        .any(|l| l.stream == Some(LogStreamKind::Stdout) && l.message.contains("stdout")));
-    assert!(lines
-        .iter()
-        .any(|l| l.stream == Some(LogStreamKind::Stderr) && l.message.contains("stderr")));
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.stream == Some(LogStreamKind::Stdout) && l.message.contains("stdout"))
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.stream == Some(LogStreamKind::Stderr) && l.message.contains("stderr"))
+    );
 }
 
 #[tokio::test]

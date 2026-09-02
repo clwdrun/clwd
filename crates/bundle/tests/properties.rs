@@ -3,7 +3,7 @@
 mod common;
 use common::*;
 
-use clwd_bundle::{decode, encode, File};
+use clwd_bundle::{File, decode, encode};
 
 #[test]
 fn packing_the_same_tree_twice_is_byte_identical() {

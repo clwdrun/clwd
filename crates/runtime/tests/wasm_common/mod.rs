@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use clwd_bundle::{build, BundleRef, Capabilities, Limits, Runtime};
+use clwd_bundle::{BundleRef, Capabilities, Limits, Runtime, build};
 use clwd_runtime::identity::{Caller, GroupId, IdentityCtx, OrgId, Principal, Role, SubjectId};
 use clwd_runtime::wasm::{
     AppId, DigestAsAppId, MemoryAppDataStore, MemoryBundleStore, MemorySecretStore, WasmSandbox,

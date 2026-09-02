@@ -53,12 +53,12 @@ mod logs;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::Sandbox;
 use crate::call::{InvokeOptions, Request, Response, SpawnOptions};
 use crate::error::{Error, Phase, Result};
 use crate::handle::{Handle, InstanceId};
 use crate::identity::IdentityCtx;
 use crate::logs::LogStream;
-use crate::Sandbox;
 use async_trait::async_trait;
 use clwd_bundle::BundleRef;
 use parking_lot::Mutex;

@@ -15,9 +15,9 @@ pub mod manifest;
 pub mod path;
 pub mod tar;
 
-pub use decode::{decode, Bundle};
+pub use decode::{Bundle, decode};
 pub use digest::{BundleRef, Digest};
-pub use encode::{build, encode, Encoded, File};
+pub use encode::{Encoded, File, build, encode};
 pub use error::Error;
 pub use manifest::{Capabilities, Limits, Manifest, Member, Runtime};
 

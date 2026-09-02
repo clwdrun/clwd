@@ -16,8 +16,8 @@ use std::io::{BufRead as _, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::error::CliError;
 use crate::Progress;
+use crate::error::CliError;
 
 use super::toolchain::{TARGET, TARGET_INSTALL};
 
@@ -120,10 +120,10 @@ pub fn compile(project: &Path, progress: Option<&dyn Progress>) -> Result<PathBu
             if msg.get("reason").and_then(|r| r.as_str()) != Some("compiler-artifact") {
                 continue;
             }
-            if let Some(name) = msg.pointer("/target/name").and_then(|n| n.as_str()) {
-                if let Some(p) = progress {
-                    p.step(&format!("compiling {name}"));
-                }
+            if let Some(name) = msg.pointer("/target/name").and_then(|n| n.as_str())
+                && let Some(p) = progress
+            {
+                p.step(&format!("compiling {name}"));
             }
             // The last `.wasm` wins: dependencies are emitted before the crate
             // being built, so the final one is the artifact asked for.

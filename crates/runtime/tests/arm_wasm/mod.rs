@@ -15,7 +15,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use async_trait::async_trait;
-use clwd_bundle::{build, BundleRef, Capabilities, File, Limits, Runtime};
+use clwd_bundle::{BundleRef, Capabilities, File, Limits, Runtime, build};
 use clwd_runtime::conformance::{BackendUnderTest, FixtureKind, InstanceObservation, WorldSpec};
 use clwd_runtime::handle::InstanceId;
 use clwd_runtime::identity::IdentityCtx;

@@ -6,7 +6,7 @@
 
 use crate::digest::{BundleRef, Digest};
 use crate::error::Error;
-use crate::manifest::{Capabilities, Manifest, Member, Runtime, FILENAME, SCHEMA_VERSION};
+use crate::manifest::{Capabilities, FILENAME, Manifest, Member, Runtime, SCHEMA_VERSION};
 use crate::tar;
 
 /// One file destined for the bundle.

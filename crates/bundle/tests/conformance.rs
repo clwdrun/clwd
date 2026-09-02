@@ -1,7 +1,7 @@
 //! The §10 conformance vector. This is the arbiter over the spec's prose: a
 //! paragraph can be misread, a byte array cannot.
 
-use clwd_bundle::{build, Capabilities, Limits, Runtime};
+use clwd_bundle::{Capabilities, Limits, Runtime, build};
 
 /// The component-model preamble, which is also the smallest valid component.
 const APP_WASM: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00];

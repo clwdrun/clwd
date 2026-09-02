@@ -33,9 +33,9 @@ use clwd_runtime::{
     Body, Caller, IdentityCtx, InvokeOptions, OrgId, Principal, Sandbox, SpawnOptions, SubjectId,
 };
 
+use crate::Progress;
 use crate::cli::Backend;
 use crate::error::CliError;
-use crate::Progress;
 
 mod output;
 pub use output::Outcome;

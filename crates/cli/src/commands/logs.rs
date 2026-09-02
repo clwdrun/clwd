@@ -11,8 +11,8 @@ use std::task::{Context, Poll};
 use futures_core::Stream;
 use serde::Serialize;
 
-use crate::error::CliError;
 use crate::Progress;
+use crate::error::CliError;
 
 /// One line of output from a running app.
 ///
