@@ -583,7 +583,7 @@ dependencies = [
 name = "clwd-sdk"
 version = "0.0.1"
 dependencies = [
- "serde",
+ "thiserror 2.0.20",
  "wit-bindgen",
 ]
 

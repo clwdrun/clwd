@@ -272,6 +272,34 @@ jobs:
       - name: wit parses standalone
         run: wasm-tools component wit wit/
 
+      # The fixture is `exclude`d from the workspace, so `cargo build
+      # --workspace` and `just check` both skip it, and the conformance suite
+      # runs against the committed `app.wasm` rather than a fresh build. A guest
+      # that no longer compiles therefore leaves every one of those green — which
+      # is exactly what happened while #34 was in flight.
+      #
+      # It matters more since #34 than before it: the guest used to depend only
+      # on wit-bindgen and changed rarely, and now it depends on clwd-sdk, so any
+      # SDK change can break it.
+      - name: the guest fixture still builds against the SDK
+        working-directory: crates/runtime/tests/fixtures/guest
+        run: cargo build --release --target wasm32-wasip2
+
+      # There is deliberately no "the committed app.wasm matches a fresh build"
+      # step here. One was written and removed: this build is not byte
+      # reproducible across machines, because rustc embeds source paths in panic
+      # payloads, so the same source produces different bytes under
+      # /home/runner than under a developer's home directory. Measured — two
+      # builds of identical source from different absolute paths differ at byte
+      # 4263 and still differ after `wasm-tools strip`, so the difference is in
+      # the code section rather than in metadata that could be normalised away.
+      #
+      # Making it reproducible needs `--remap-path-prefix` wired through both
+      # this job and `just rebuild-guest`, which is a build-configuration change
+      # rather than a check. The guard that survives is the one above, and it is
+      # the one that catches what actually went wrong: a fixture whose source
+      # does not compile.
+
   # `clwd logs` must not carry a runtime backend. Asserted, not trusted.
   cli-deps:
     runs-on: ubuntu-latest
@@ -318,14 +346,42 @@ jobs:
       - run: rustup show active-toolchain
         working-directory: fresh
 
+      # The property is "does a dependency leave this repository", so the check
+      # resolves each path and asks that, rather than counting `../` and hoping
+      # depth stands in for direction. The regex this replaced got both cases
+      # wrong: it failed a fixture four levels deep reaching a sibling crate
+      # *inside* the repo, and it missed a root manifest escaping with a single
+      # `../` — verified both ways before the swap.
       - name: no dependency may reference the private platform repo
         working-directory: fresh
         run: |
-          if grep -rnE 'clwdrun/platform|path\s*=\s*"[^"]*\.\./\.\./' --include=Cargo.toml .; then
-            echo "::error::a manifest references the private platform repo or escapes the workspace"
-            exit 1
+          set -uo pipefail
+          root=$(pwd -P)
+          fail=0
+
+          # The private repo by name. No path resolution makes this acceptable.
+          if grep -rn 'clwdrun/platform' --include=Cargo.toml . ; then
+            echo "::error::a manifest references the private platform repo"
+            fail=1
           fi
-          echo "ok: no private-repo or workspace-escaping path dependency"
+
+          while IFS= read -r hit; do
+            manifest=${hit%%:*}
+            rest=${hit#*:}
+            dep=${rest#*\"}
+            dep=${dep%%\"*}
+            resolved=$(realpath -m "$(dirname "$manifest")/$dep")
+            case "$resolved" in
+              "$root" | "$root"/*) ;;
+              *)
+                echo "::error::$manifest: path dependency \"$dep\" resolves to $resolved, outside this repository"
+                fail=1
+                ;;
+            esac
+          done < <(grep -rn --include=Cargo.toml -oE 'path[[:space:]]*=[[:space:]]*"[^"]+"' . || true)
+
+          [ "$fail" -eq 0 ] || exit 1
+          echo "ok: no private-repo reference, and every path dependency stays inside the repository"
 
       # Isolated CARGO_HOME and no sibling checkouts: nothing on this runner can
       # satisfy a path dep that a developer machine would resolve locally.

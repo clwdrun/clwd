@@ -8,7 +8,25 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-wit-bindgen = "0.60"
+# The SDK, by path. This fixture is the closest thing in the repository to a
+# real app, so building it the way an app is built is what keeps the SDK
+# honest: if the ergonomic layer stops serving a working guest, this stops
+# compiling.
+#
+# `wit-bindgen` is no longer a direct dependency. Generating the world twice —
+# once here and once in the SDK — would produce two incompatible copies of
+# every type.
+#
+# By path, and NOT `clwd-sdk.workspace = true`. This crate is `exclude`d from
+# the workspace — it targets wasm32-wasip2 and keeps its own lockfile — and
+# inheritance needs a workspace root to inherit from, so that spelling fails
+# with "failed to find a workspace root". The exclusion is the thing that makes
+# it impossible.
+#
+# The four `../` are depth, not escape: this resolves to `crates/sdk` inside
+# this repository. The standalone job's seam check verifies that by resolving
+# the path rather than counting separators.
+clwd-sdk = { path = "../../../../sdk" }
 
 [profile.release]
 opt-level = "z"

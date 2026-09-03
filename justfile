@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare cli-deps spec-intact bundle-deps trait-deps wasm-contained deny
+check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare cli-deps spec-intact guest-intact bundle-deps trait-deps wasm-contained deny
 
 # Secret scan over full history. GitHub's own scanning and push protection are
 # Advanced Security features and are not available on a private repository, so
@@ -110,6 +110,25 @@ cli-deps:
 # rather than as an unexplained digest mismatch later.
 spec-intact:
     cd docs/spec && sha256sum -c SHA256SUMS
+
+# The guest fixture is `exclude`d from the workspace, so `cargo check
+# --workspace` never compiles it, and `test-conformance` runs against the
+# committed `app.wasm` rather than a fresh build. Both stay green while the
+# fixture's source is broken — which happened during #34, and is why this
+# exists. It matters more since then: the guest depends on `clwd-sdk` now, so
+# any SDK change can break it.
+#
+# Cheap on a warm target directory; the first run pays for the wasm build.
+# It checks that the fixture COMPILES, not that the committed `app.wasm` matches
+# a fresh build. A byte comparison was tried and removed: rustc embeds source
+# paths in panic payloads, so the same source produces different bytes from
+# different absolute paths — measured at 87,060 vs 87,507, still differing after
+# `wasm-tools strip`. Reproducibility would need `--remap-path-prefix` wired
+# through here and `rebuild-guest`, which is a build-config change rather than a
+# check.
+guest-intact:
+    cd crates/runtime/tests/fixtures/guest && cargo build --release --target wasm32-wasip2
+    @echo "ok: the guest fixture still compiles against the SDK"
 
 # Re-record the hashes after a deliberate spec or fixture change.
 spec-reseal:
