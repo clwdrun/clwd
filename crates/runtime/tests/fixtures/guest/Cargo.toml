@@ -8,7 +8,15 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-wit-bindgen = "0.60"
+# The SDK, by path. This fixture is the closest thing in the repository to a
+# real app, so building it the way an app is built is what keeps the SDK
+# honest: if the ergonomic layer stops serving a working guest, this stops
+# compiling.
+#
+# `wit-bindgen` is no longer a direct dependency. Generating the world twice —
+# once here and once in the SDK — would produce two incompatible copies of
+# every type.
+clwd-sdk = { path = "../../../../sdk" }
 
 [profile.release]
 opt-level = "z"

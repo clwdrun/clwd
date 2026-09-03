@@ -1,14 +1,22 @@
 //! One component, several behaviours, selected by request path. Keeping them in
 //! one guest means one committed fixture instead of five.
 //!
+//! Written against `clwd-sdk` rather than raw bindings, deliberately: this is
+//! the closest thing in the repository to an app, so it is also the best
+//! evidence of what the SDK feels like to use. If a change to the SDK makes a
+//! working guest harder to write, it shows up here first.
+//!
 //! Rebuild with `just rebuild-guest`.
 
-// The canonical WIT, not a copy. A copy would be 28 duplicated files that can
-// drift from wit/ silently between rebuilds.
-wit_bindgen::generate!({ path: "../../../../../wit", world: "app", generate_all });
-
-use exports::wasi::http::incoming_handler::Guest;
-use wasi::http::types::{Fields, IncomingRequest, OutgoingBody, OutgoingResponse, ResponseOutparam};
+// The app-data and secrets paths stay on the raw bindings on purpose. This
+// fixture's job for R5.x and R6.x is to assert the *interface's* contract —
+// which error variants exist, that absence is `Ok(None)` and not an error — and
+// wrapping those in the SDK's types would test the wrapper instead. Response
+// writing and identity go through the SDK, because there the SDK is what an app
+// would use. A fixture that used the ergonomic layer everywhere would prove
+// less, not more.
+use clwd_sdk::raw::{app_data, secrets, wasi};
+use clwd_sdk::{Caller, Request, Response, caller};
 
 /// Mutated by `/counter`. Whether this survives between requests is exactly
 /// what the instance-lifetime test asserts.
@@ -17,27 +25,32 @@ static mut COUNTER: u32 = 0;
 struct Component;
 
 /// Render an app-data error so a test can assert on which one it was.
-fn describe(e: clwd::app_data::store::Error) -> String {
+fn describe(e: app_data::store::Error) -> String {
     match e {
-        clwd::app_data::store::Error::InvalidKey(why) => format!("invalid-key:{why}"),
-        clwd::app_data::store::Error::ValueTooLarge(limit) => format!("value-too-large:{limit}"),
-        clwd::app_data::store::Error::Unavailable => "unavailable".into(),
+        app_data::store::Error::InvalidKey(why) => format!("invalid-key:{why}"),
+        app_data::store::Error::ValueTooLarge(limit) => format!("value-too-large:{limit}"),
+        app_data::store::Error::Unavailable => "unavailable".into(),
     }
 }
 
+/// The three kinds of caller, never collapsed into an `Option`. Anonymous is a
+/// caller, not a missing one — see `clwd_sdk::caller`.
 fn caller_subject() -> String {
-    match clwd::identity::context::get_caller() {
-        clwd::identity::types::Caller::Anonymous => "anonymous".to_string(),
-        clwd::identity::types::Caller::User(p) => p.subject,
-        clwd::identity::types::Caller::Service(s) => s.subject,
+    match caller() {
+        Caller::Anonymous => "anonymous".to_string(),
+        Caller::User(u) => u.subject,
+        Caller::Service(s) => s.subject,
     }
 }
 
-impl Guest for Component {
-    fn handle(request: IncomingRequest, outparam: ResponseOutparam) {
-        let path = request.path_with_query().unwrap_or_default();
+impl clwd_sdk::exports::wasi::http::incoming_handler::Guest for Component {
+    fn handle(
+        request: clwd_sdk::raw::wasi::http::types::IncomingRequest,
+        outparam: clwd_sdk::raw::wasi::http::types::ResponseOutparam,
+    ) {
+        let request = Request::new(request);
 
-        let payload = match path.as_str() {
+        let payload = match request.path() {
             // Who does this instance think is calling? The isolation tests
             // compare this against the identity the Store was built with.
             "/whoami" => caller_subject(),
@@ -51,14 +64,14 @@ impl Guest for Component {
                 n.to_string()
             }
 
-            "/role" => match clwd::identity::context::get_role() {
-                Some(clwd::identity::types::Role::Viewer) => "viewer".into(),
-                Some(clwd::identity::types::Role::Editor) => "editor".into(),
-                Some(clwd::identity::types::Role::Owner) => "owner".into(),
+            "/role" => match clwd_sdk::role() {
+                Some(clwd_sdk::Role::Viewer) => "viewer".into(),
+                Some(clwd_sdk::Role::Editor) => "editor".into(),
+                Some(clwd_sdk::Role::Owner) => "owner".into(),
                 None => "none".into(),
             },
 
-            "/groups" => clwd::identity::context::list_groups().join(","),
+            "/groups" => clwd_sdk::groups().join(","),
 
             "/log" => {
                 println!("hello from stdout");
@@ -123,10 +136,10 @@ impl Guest for Component {
 
             // /secret/NAME -> the value, or "absent" when this app was not
             // given it. The guest cannot tell "no such secret" from "not
-            // yours"; both arrive as none.
+            // yours"; both arrive as none, and the SDK adds no way to tell.
             p if p.starts_with("/secret/") => {
                 let name = &p["/secret/".len()..];
-                match clwd::secrets::broker::get(name) {
+                match secrets::broker::get(name) {
                     Some(value) => String::from_utf8_lossy(&value).into_owned(),
                     None => "absent".into(),
                 }
@@ -135,7 +148,7 @@ impl Guest for Component {
             // /data/get/KEY
             p if p.starts_with("/data/get/") => {
                 let key = &p["/data/get/".len()..];
-                match clwd::app_data::store::get(key) {
+                match app_data::store::get(key) {
                     Ok(Some(v)) => String::from_utf8_lossy(&v).into_owned(),
                     Ok(None) => "absent".into(),
                     Err(e) => format!("error:{}", describe(e)),
@@ -150,7 +163,7 @@ impl Guest for Component {
                     Some((k, v)) => (k, v),
                     None => (rest, ""),
                 };
-                match clwd::app_data::store::set(key, value.as_bytes()) {
+                match app_data::store::set(key, value.as_bytes()) {
                     Ok(()) => "stored".into(),
                     Err(e) => format!("error:{}", describe(e)),
                 }
@@ -159,7 +172,7 @@ impl Guest for Component {
             // /data/delete/KEY
             p if p.starts_with("/data/delete/") => {
                 let key = &p["/data/delete/".len()..];
-                match clwd::app_data::store::delete(key) {
+                match app_data::store::delete(key) {
                     Ok(()) => "deleted".into(),
                     Err(e) => format!("error:{}", describe(e)),
                 }
@@ -168,7 +181,7 @@ impl Guest for Component {
             // /data/big/N — store N bytes, to reach the value ceiling.
             p if p.starts_with("/data/big/") => {
                 let n: usize = p["/data/big/".len()..].parse().unwrap_or(0);
-                match clwd::app_data::store::set("big", &vec![b'x'; n]) {
+                match app_data::store::set("big", &vec![b'x'; n]) {
                     Ok(()) => "stored".into(),
                     Err(e) => format!("error:{}", describe(e)),
                 }
@@ -177,15 +190,13 @@ impl Guest for Component {
             _ => "ok".into(),
         };
 
-        let response = OutgoingResponse::new(Fields::new());
-        response.set_status_code(200).unwrap();
-        let body = response.body().unwrap();
-        ResponseOutparam::set(outparam, Ok(response));
-        let stream = body.write().unwrap();
-        stream.blocking_write_and_flush(payload.as_bytes()).unwrap();
-        drop(stream);
-        OutgoingBody::finish(body, None).unwrap();
+        // The whole eight-step response sequence, including the two ordering
+        // constraints that are not expressible in the raw types.
+        Response::ok().send(outparam, payload.as_bytes());
     }
 }
 
-export!(Component);
+// `with_types_in` is required when the bindings live in another crate: without
+// it the generated macro resolves its types against `self`, which is the SDK
+// from inside the SDK and this crate from out here.
+clwd_sdk::export!(Component with_types_in clwd_sdk);
