@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 # `wit-bindgen` is no longer a direct dependency. Generating the world twice —
 # once here and once in the SDK — would produce two incompatible copies of
 # every type.
-clwd-sdk = { path = "../../../../sdk" }
+clwd-sdk.worspace = true
 
 [profile.release]
 opt-level = "z"

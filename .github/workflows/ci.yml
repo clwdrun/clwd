@@ -318,14 +318,42 @@ jobs:
       - run: rustup show active-toolchain
         working-directory: fresh
 
+      # The property is "does a dependency leave this repository", so the check
+      # resolves each path and asks that, rather than counting `../` and hoping
+      # depth stands in for direction. The regex this replaced got both cases
+      # wrong: it failed a fixture four levels deep reaching a sibling crate
+      # *inside* the repo, and it missed a root manifest escaping with a single
+      # `../` — verified both ways before the swap.
       - name: no dependency may reference the private platform repo
         working-directory: fresh
         run: |
-          if grep -rnE 'clwdrun/platform|path\s*=\s*"[^"]*\.\./\.\./' --include=Cargo.toml .; then
-            echo "::error::a manifest references the private platform repo or escapes the workspace"
-            exit 1
+          set -uo pipefail
+          root=$(pwd -P)
+          fail=0
+
+          # The private repo by name. No path resolution makes this acceptable.
+          if grep -rn 'clwdrun/platform' --include=Cargo.toml . ; then
+            echo "::error::a manifest references the private platform repo"
+            fail=1
           fi
-          echo "ok: no private-repo or workspace-escaping path dependency"
+
+          while IFS= read -r hit; do
+            manifest=${hit%%:*}
+            rest=${hit#*:}
+            dep=${rest#*\"}
+            dep=${dep%%\"*}
+            resolved=$(realpath -m "$(dirname "$manifest")/$dep")
+            case "$resolved" in
+              "$root" | "$root"/*) ;;
+              *)
+                echo "::error::$manifest: path dependency \"$dep\" resolves to $resolved, outside this repository"
+                fail=1
+                ;;
+            esac
+          done < <(grep -rn --include=Cargo.toml -oE 'path[[:space:]]*=[[:space:]]*"[^"]+"' . || true)
+
+          [ "$fail" -eq 0 ] || exit 1
+          echo "ok: no private-repo reference, and every path dependency stays inside the repository"
 
       # Isolated CARGO_HOME and no sibling checkouts: nothing on this runner can
       # satisfy a path dep that a developer machine would resolve locally.
