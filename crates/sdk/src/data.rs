@@ -84,9 +84,16 @@ pub struct Namespace {
 }
 
 impl Namespace {
+    /// The key this namespace actually stores under.
+    ///
+    /// Joined with `.`, not `/`: the published grammar in
+    /// `wit/deps/app-data/app-data.wit` does not permit `/`, so a slash-joined
+    /// key is refused by the host on every call. See
+    /// `every_generated_key_satisfies_the_published_grammar`, which exists
+    /// because that is exactly what shipped.
     fn key(&self, key: &str) -> String {
         match &self.prefix {
-            Some(p) => format!("{p}/{key}"),
+            Some(p) => format!("{p}{SEGMENT_SEPARATOR}{key}"),
             None => String::from(key),
         }
     }
@@ -115,22 +122,74 @@ pub fn shared() -> Namespace {
     Namespace { prefix: None }
 }
 
+/// The prefix a per-caller namespace puts before every key.
+///
+/// **This is an on-disk format.** Every app that has ever used [`for_caller`]
+/// has its data under keys beginning with this, so changing it orphans all of
+/// it — silently, looking like the app forgot, which is the same failure
+/// `DigestAsAppId` warns about on the host side. It is not a cosmetic choice.
+///
+/// `.` rather than `/` because the published key grammar does not permit `/`;
+/// see [`key_grammar_permits`].
+const CALLER_PREFIX: &str = "u.";
+
+/// What joins a namespace prefix to an app's own key.
+///
+/// Also an on-disk format, and also constrained by the published grammar: `/`
+/// is not in it.
+const SEGMENT_SEPARATOR: char = '.';
+
+/// Whether `segment` satisfies the key grammar `clwd:app-data` publishes.
+///
+/// **The source of truth is `wit/deps/app-data/app-data.wit`**, which states:
+/// "A key is 1 to 128 bytes of `a`-`z`, `0`-`9`, `.`, `_` or `-`, and may not
+/// begin or end with `.`, `_` or `-`."
+///
+/// This is a second implementation of that published rule, not of the host's
+/// private one. The host enforces it too; a guest that checks first gets a
+/// typed refusal instead of a store error it can do nothing about.
+fn key_grammar_permits(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment.len() <= 128
+        && segment
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'))
+        && !segment.starts_with(['.', '_', '-'])
+        && !segment.ends_with(['.', '_', '-'])
+}
+
 /// A namespace private to one caller.
 ///
 /// Keys are prefixed with the caller's subject, so two callers using the same
 /// key do not see each other's values.
 ///
-/// Returns `None` for [`Caller::Anonymous`], because an anonymous caller has no
-/// subject to scope by and there is no sensible namespace to invent. That is
-/// the same reasoning as everywhere else in this crate: anonymous is a kind of
-/// caller, and the type says what it cannot do rather than quietly picking a
-/// key like `""` that every anonymous caller would then share.
+/// # When this returns `None`
+///
+/// **The caller is anonymous.** There is no subject to scope by, and inventing
+/// one would give every anonymous caller the same namespace — the leak this
+/// exists to prevent.
+///
+/// **The subject cannot appear in a key.** The grammar in
+/// [`key_grammar_permits`] is narrow, and a subject outside it is refused
+/// rather than mangled into something that fits. Mangling is the dangerous
+/// option: two different subjects can squash into one key, and two callers
+/// silently sharing a namespace is a data leak rather than a formatting
+/// problem.
+///
+/// The second case cannot happen locally, where the subject is always `local`.
+/// It becomes reachable when `platform#11` supplies real subject ids, and an
+/// app that sees it is looking at a platform-side problem rather than anything
+/// its caller did — worth logging as such, not reporting as "sign in".
 #[must_use]
 pub fn for_caller(caller: &Caller) -> Option<Namespace> {
-    caller.subject().map(|subject| Namespace {
-        // `u/` rather than the bare subject, so a per-caller key can never
-        // collide with an app-wide key an author chose.
-        prefix: Some(format!("u/{subject}")),
+    let subject = caller.subject()?;
+    if !key_grammar_permits(subject) {
+        return None;
+    }
+    Some(Namespace {
+        // Prefixed, so a per-caller key can never collide with an app-wide key
+        // an author chose.
+        prefix: Some(format!("{CALLER_PREFIX}{subject}")),
     })
 }
 
@@ -158,7 +217,81 @@ mod tests {
     #[test]
     fn a_caller_namespace_prefixes_by_subject() {
         let ns = for_caller(&user("alice")).expect("a user has a subject");
-        assert_eq!(ns.key("note"), "u/alice/note");
+        assert_eq!(ns.key("note"), "u.alice.note");
+    }
+
+    /// **The test that was missing.**
+    ///
+    /// The previous version asserted `ns.key("note") == "u/alice/note"` — what
+    /// the function constructs, not what the store accepts. It passed while
+    /// every call through `for_caller` failed at runtime, because `/` is not in
+    /// the published grammar and the host rejected every key.
+    ///
+    /// A pure-function test of a value another system validates is not a test
+    /// of the integration. This asserts the property that matters instead: the
+    /// keys this module generates are keys `clwd:app-data` will accept.
+    #[test]
+    fn every_generated_key_satisfies_the_published_grammar() {
+        let subjects = ["local", "alice", "u-123", "a.b.c", "x_y", "0"];
+        let keys = ["note", "a", "some.key", "with_underscore", "with-dash"];
+
+        for subject in subjects {
+            let ns = for_caller(&user(subject))
+                .unwrap_or_else(|| panic!("{subject:?} should yield a namespace"));
+            for key in keys {
+                let generated = ns.key(key);
+                assert!(
+                    key_grammar_permits(&generated),
+                    "for_caller({subject:?}).key({key:?}) produced {generated:?}, \
+                     which the app-data grammar rejects — the host will refuse it"
+                );
+            }
+        }
+
+        // The shared namespace passes the caller's key through, so it is only
+        // as valid as what the app supplies; assert the pass-through itself.
+        for key in keys {
+            assert!(key_grammar_permits(&shared().key(key)));
+        }
+    }
+
+    /// A subject that cannot appear in a key is refused, not mangled. Two
+    /// subjects squashed into one key would put two callers in one namespace,
+    /// which is a data leak rather than a formatting problem.
+    #[test]
+    fn a_subject_outside_the_grammar_is_refused_rather_than_reshaped() {
+        for bad in [
+            "Alice",
+            "a/b",
+            "a b",
+            "user@example.com",
+            "",
+            "-lead",
+            "trail.",
+        ] {
+            assert!(
+                for_caller(&user(bad)).is_none(),
+                "{bad:?} was accepted as a namespace subject"
+            );
+        }
+    }
+
+    /// The grammar check is a second implementation of a published rule, so it
+    /// is asserted against the rule's own wording rather than trusted.
+    #[test]
+    fn the_grammar_check_matches_what_the_wit_documents() {
+        // "1 to 128 bytes"
+        assert!(!key_grammar_permits(""));
+        assert!(key_grammar_permits(&"a".repeat(128)));
+        assert!(!key_grammar_permits(&"a".repeat(129)));
+        // "of a-z, 0-9, ., _ or -"
+        assert!(key_grammar_permits("a0._-x"));
+        assert!(!key_grammar_permits("A"));
+        assert!(!key_grammar_permits("/"));
+        // "may not begin or end with ., _ or -"
+        for edge in [".x", "_x", "-x", "x.", "x_", "x-"] {
+            assert!(!key_grammar_permits(edge), "{edge:?} was accepted");
+        }
     }
 
     #[test]
@@ -174,7 +307,7 @@ mod tests {
     fn a_caller_key_cannot_collide_with_an_app_wide_key() {
         let ns = for_caller(&user("alice")).expect("subject");
         assert_ne!(ns.key("config"), shared().key("config"));
-        assert!(ns.key("config").starts_with("u/"));
+        assert!(ns.key("config").starts_with(CALLER_PREFIX));
     }
 
     /// Anonymous has no namespace, and the type says so rather than inventing
@@ -192,7 +325,7 @@ mod tests {
             on_behalf_of: None,
         });
         let ns = for_caller(&c).expect("a service has a subject");
-        assert_eq!(ns.key("cursor"), "u/billing/cursor");
+        assert_eq!(ns.key("cursor"), "u.billing.cursor");
     }
 
     /// Every store failure is the app's own problem, not the caller's.
