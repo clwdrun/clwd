@@ -3,3 +3,10 @@ target/
 .DS_Store
 wip/
 crates/runtime/tests/fixtures/guest/target/
+
+# A template's lockfile is build output, not part of the template. It pins
+# clwd-sdk through the relative path the repository uses, and `clwd init`
+# rewrites that path — so a shipped lockfile would describe a resolution the
+# scaffolded project does not have. Each project generates its own on first
+# build.
+templates/*/Cargo.lock
