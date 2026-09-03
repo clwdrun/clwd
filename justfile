@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare cli-deps spec-intact guest-intact bundle-deps trait-deps wasm-contained deny
+check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare cli-deps spec-intact guest-intact templates-build bundle-deps trait-deps wasm-contained deny
 
 # Secret scan over full history. GitHub's own scanning and push protection are
 # Advanced Security features and are not available on a private repository, so
@@ -126,6 +126,17 @@ spec-intact:
 # `wasm-tools strip`. Reproducibility would need `--remap-path-prefix` wired
 # through here and `rebuild-guest`, which is a build-config change rather than a
 # check.
+# Templates are shipped product and are excluded from the workspace, so nothing
+# else compiles them. Shared target directory: the first costs ~35 s cold and
+# each further one ~1.5 s, since clwd-sdk and wit-bindgen compile once.
+templates-build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for t in templates/*/; do
+      (cd "$t" && cargo build --release --target wasm32-wasip2 --target-dir "$PWD/../../target/templates")
+    done
+    echo "ok: every template builds for wasm32-wasip2"
+
 guest-intact:
     cd crates/runtime/tests/fixtures/guest && cargo build --release --target wasm32-wasip2
     @echo "ok: the guest fixture still compiles against the SDK"

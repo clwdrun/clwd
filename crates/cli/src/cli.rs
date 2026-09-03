@@ -48,7 +48,23 @@ pub enum Backend {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Scaffold a new app from a template
-    Init,
+    Init {
+        /// The app's name. Becomes the directory, the crate name, and
+        /// `[app] name` in clwd.toml.
+        name: String,
+
+        /// Which template to start from. `--list` shows them.
+        #[arg(long)]
+        template: Option<String>,
+
+        /// Where to create the project. Defaults to the current directory.
+        #[arg(long, default_value = ".")]
+        into: std::path::PathBuf,
+
+        /// List the templates and what each teaches, then exit.
+        #[arg(long, conflicts_with_all = ["template", "into"])]
+        list: bool,
+    },
     /// Run an app locally in a sandbox
     Run {
         /// The bundle to run — the file `clwd build` produces.

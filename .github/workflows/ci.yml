@@ -281,6 +281,26 @@ jobs:
       # It matters more since #34 than before it: the guest used to depend only
       # on wit-bindgen and changed rarely, and now it depends on clwd-sdk, so any
       # SDK change can break it.
+      # Templates are shipped product: an authoring agent reads them and
+      # reproduces their habits into apps nobody reviews, so one that stops
+      # compiling is a regression in what those apps look like.
+      #
+      # They are excluded from the workspace, so `cargo check --workspace` never
+      # sees them — the same gap that let the guest fixture rot. Measured: the
+      # first costs 34.7 s cold and each further one 1.5 s against a shared
+      # target directory, because clwd-sdk and wit-bindgen compile once. Each
+      # still builds independently from cold; the sharing is a cache, not a
+      # dependency between them.
+      - name: every template builds
+        run: |
+          set -euo pipefail
+          for t in templates/*/; do
+            name=$(basename "$t")
+            echo "--- $name"
+            (cd "$t" && cargo build --release --target wasm32-wasip2 --target-dir "$GITHUB_WORKSPACE/target/templates")
+          done
+          echo "ok: every template builds for wasm32-wasip2"
+
       - name: the guest fixture still builds against the SDK
         working-directory: crates/runtime/tests/fixtures/guest
         run: cargo build --release --target wasm32-wasip2

@@ -1,0 +1,28 @@
+# This app is its own workspace. Without it, running `clwd init` inside a
+# directory that already has a Cargo workspace would produce a project cargo
+# refuses to build, saying it "believes it's in a workspace when it's not".
+[workspace]
+
+[package]
+name = "minimal"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+# A clwd app is a wasm component, and a component is built from a cdylib.
+crate-type = ["cdylib"]
+
+[dependencies]
+# Until clwd-sdk is published (clwdrun/clwd#66) an app needs a path to a
+# checkout. `clwd init` rewrites this line to an absolute path; in the
+# repository it is relative, so CI builds the template exactly as it ships.
+clwd-sdk = { path = "../../crates/sdk" }
+
+# Do not remove or weaken this. It is the single largest lever on how big your
+# app is — measured at several times the size without it — and `clwd build`
+# warns when any of the three keys is missing.
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true

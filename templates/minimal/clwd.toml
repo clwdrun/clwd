@@ -1,0 +1,24 @@
+# What your app is called, and what it is allowed to do.
+#
+# `clwd build` prints the whole granted set on every build, including when it is
+# empty, so what an app can reach is visible without reading this file.
+
+[app]
+name = "minimal"
+
+[capabilities]
+# Deny by default. Three empty arrays, written out rather than left absent:
+# a grant of nothing says so, and there is one spelling for it.
+#
+# Add a hostname to `egress` to let this app make outbound requests, a name to
+# `secrets` to let it read one, a namespace to `storage_namespaces` to let it
+# store data. Nothing is granted implicitly.
+egress = []
+secrets = []
+storage_namespaces = []
+
+[capabilities.limits]
+# Per request. The sandbox stops the app at these, so they are a promise about
+# the worst case rather than a hint.
+cpu_ms = 5000
+memory_mb = 128
