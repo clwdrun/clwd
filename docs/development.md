@@ -103,6 +103,41 @@ Bumping a pin: move forward to a new tag rather than moving a published one.
 `clwd-sdk` and `clwd-bundle` are pinned together at the same tag and move
 together.
 
+## A check that passes without checking
+
+Four times now, a check in this repository has been green while the thing it
+named was broken. The instances differ; the shape does not.
+
+| Where | The check | Why it passed anyway |
+| --- | --- | --- |
+| #28 | `clwd build` warns on a bad release profile | `toml::Value`'s `FromStr` parses one *value*, so a manifest starting `[profile.release]` was read as an array and rejected — the function returned zero warnings for every input |
+| #72 | the conformance suite, 35/35 | it ran against the committed `app.wasm`, so it stayed green while the fixture's source no longer compiled |
+| #72 | an optimiser comparison | it skipped itself when `wasm-tools` was absent, which is precisely the CI environment it mattered in |
+| #29 | `assert_eq!(ns.key("note"), "u/alice/note")` | it asserted what the function *builds*, not what the store *accepts* — `/` is not in the published key grammar, so every call failed at runtime |
+
+The general form, and the one worth remembering:
+
+> **A pure-function test of a value another system validates is not a test of
+> the integration.** Neither is a test that runs against a committed artifact
+> instead of a fresh one, or one that skips itself where it counts.
+
+What each of these needed was the same: exercise the property against the thing
+that judges it. `ns.key()` should be checked against the grammar
+`wit/deps/app-data/app-data.wit` publishes, not against a string someone chose.
+The conformance suite needed something that rebuilds the fixture. The optimiser
+comparison needed the tool installed rather than a conditional skip.
+
+Two habits that catch this cheaply:
+
+- **Mutate the code and watch the test fail.** A test that has never failed has
+  never been shown to work. Every one of the four above passes its own
+  assertions perfectly.
+- **Ask what would have to be true for this to pass while the feature is
+  broken.** If the answer is short, the check is aimed at the wrong thing.
+
+`clwdrun/platform`'s `docs/development.md` carries a shorter version of this
+note; this is the fuller one and the two should converge here.
+
 ## Untrusted code assumption
 
 Everything running in a sandbox was probably written by an agent and is being run
