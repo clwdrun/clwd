@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare cli-deps spec-intact bundle-deps trait-deps wasm-contained deny
+check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare cli-deps spec-intact guest-intact bundle-deps trait-deps wasm-contained deny
 
 # Secret scan over full history. GitHub's own scanning and push protection are
 # Advanced Security features and are not available on a private repository, so
@@ -110,6 +110,26 @@ cli-deps:
 # rather than as an unexplained digest mismatch later.
 spec-intact:
     cd docs/spec && sha256sum -c SHA256SUMS
+
+# The guest fixture is `exclude`d from the workspace, so `cargo check
+# --workspace` never compiles it, and `test-conformance` runs against the
+# committed `app.wasm` rather than a fresh build. Both stay green while the
+# fixture's source is broken — which happened during #34, and is why this
+# exists. It matters more since then: the guest depends on `clwd-sdk` now, so
+# any SDK change can break it.
+#
+# Cheap on a warm target directory; the first run pays for the wasm build.
+guest-intact:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd crates/runtime/tests/fixtures/guest && cargo build --release --target wasm32-wasip2
+    cd - >/dev/null
+    built=crates/runtime/tests/fixtures/guest/target/wasm32-wasip2/release/clwd_test_guest.wasm
+    if ! cmp -s "$built" crates/runtime/tests/fixtures/app.wasm; then
+      echo "error: crates/runtime/tests/fixtures/app.wasm is stale — run \`just rebuild-guest\` and commit it"
+      exit 1
+    fi
+    echo "ok: the guest fixture builds and its committed artifact is current"
 
 # Re-record the hashes after a deliberate spec or fixture change.
 spec-reseal:
