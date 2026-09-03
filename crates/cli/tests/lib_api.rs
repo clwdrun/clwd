@@ -25,11 +25,14 @@ impl Progress for Recorder {
     fn finish(&self) {}
 }
 
+/// Same property as `run`, `build` and `secrets`: callable in process, typed
+/// error out. The name is invalid, so this exercises validation rather than
+/// touching the filesystem.
 #[test]
-fn commands_are_callable_in_process_and_return_typed_errors() {
-    let err = commands::init::execute(None).expect_err("init has no body yet");
-    assert_eq!(err.code(), "cli.not_implemented");
-    assert!(matches!(err, CliError::NotImplemented { command: "init" }));
+fn init_is_callable_in_process_and_returns_a_typed_error() {
+    let err = commands::init::execute(std::path::Path::new("/nonexistent"), "my.app", None, None)
+        .expect_err("a dot is not a legal crate name");
+    assert_eq!(err.code(), "cli.invalid_argument");
 }
 
 /// `run` has a body now, and it is still callable in-process and still returns
@@ -91,14 +94,13 @@ fn every_command_reports_either_a_value_or_a_stable_code() {
     // Each arm calls a distinct command, so a command added to the surface
     // without a `Result<_, CliError>` signature will not compile here.
     //
-    // `run`, `build` and `secrets` are no longer in this list: they have bodies, so they do
+    // `run`, `build`, `secrets` and `init` are no longer in this list: they have bodies, so they do
     // not return `cli.not_implemented` and asserting that they do would be
     // asserting they stay unbuilt. Each is covered by its own
     // `*_is_callable_in_process_and_returns_a_typed_error` above, and end to end
     // by `tests/run.rs` and `tests/build.rs`. Every command that gains a body
     // leaves this list the same way.
     let codes = [
-        commands::init::execute(None).unwrap_err().code(),
         commands::dev::execute(None).unwrap_err().code(),
         commands::publish::execute(None).unwrap_err().code(),
         commands::logs::execute(false, None).unwrap_err().code(),

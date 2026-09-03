@@ -98,7 +98,25 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
     let progress = reporter.as_deref();
 
     let result = match &cli.command {
-        Command::Init => emit(format, commands::init::execute(progress), out),
+        Command::Init {
+            name,
+            template,
+            into,
+            list,
+        } => {
+            if *list {
+                for (name, teaches) in commands::init::list() {
+                    writeln!(out, "{name:<10} {teaches}").map_err(internal)?;
+                }
+                Ok(())
+            } else {
+                emit(
+                    format,
+                    commands::init::execute(into, name, template.as_deref(), progress),
+                    out,
+                )
+            }
+        }
         Command::Run {
             bundle,
             path,
