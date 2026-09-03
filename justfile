@@ -119,17 +119,16 @@ spec-intact:
 # any SDK change can break it.
 #
 # Cheap on a warm target directory; the first run pays for the wasm build.
+# It checks that the fixture COMPILES, not that the committed `app.wasm` matches
+# a fresh build. A byte comparison was tried and removed: rustc embeds source
+# paths in panic payloads, so the same source produces different bytes from
+# different absolute paths — measured at 87,060 vs 87,507, still differing after
+# `wasm-tools strip`. Reproducibility would need `--remap-path-prefix` wired
+# through here and `rebuild-guest`, which is a build-config change rather than a
+# check.
 guest-intact:
-    #!/usr/bin/env bash
-    set -euo pipefail
     cd crates/runtime/tests/fixtures/guest && cargo build --release --target wasm32-wasip2
-    cd - >/dev/null
-    built=crates/runtime/tests/fixtures/guest/target/wasm32-wasip2/release/clwd_test_guest.wasm
-    if ! cmp -s "$built" crates/runtime/tests/fixtures/app.wasm; then
-      echo "error: crates/runtime/tests/fixtures/app.wasm is stale — run \`just rebuild-guest\` and commit it"
-      exit 1
-    fi
-    echo "ok: the guest fixture builds and its committed artifact is current"
+    @echo "ok: the guest fixture still compiles against the SDK"
 
 # Re-record the hashes after a deliberate spec or fixture change.
 spec-reseal:
