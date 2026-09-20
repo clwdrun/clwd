@@ -328,6 +328,21 @@ fn verify(_path: &Path, _expected: u32) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Refuse `path` unless it is owner-only, reusing this store's `0600` check.
+///
+/// Shared with the platform credentials file: a token in a world-readable file
+/// is the same hazard a secret in one is, so it is refused by the same code
+/// rather than a second copy that could drift.
+#[cfg(unix)]
+pub(crate) fn verify_private(path: &Path) -> Result<(), CliError> {
+    verify(path, FILE_MODE)
+}
+
+#[cfg(not(unix))]
+pub(crate) fn verify_private(_path: &Path) -> Result<(), CliError> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

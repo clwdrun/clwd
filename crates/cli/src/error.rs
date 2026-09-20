@@ -92,7 +92,12 @@ macro_rules! define_cli_error {
             ///
             /// May be from another namespace. A delegating variant returns its
             /// source's code **unchanged** — see the module documentation.
-            pub fn code(&self) -> &'static str {
+            ///
+            /// Returns `&str` rather than `&'static str`: the `Platform`
+            /// variant's code arrives from the wire at runtime, so it is
+            /// borrowed from `self` rather than a program literal. Every other
+            /// arm returns a `'static` string, which coerces.
+            pub fn code(&self) -> &str {
                 match self {
                     $( $(#[$dattr])* Self::$dvariant { source } => source.code(), )*
                     $( Self::$variant { .. } => $code, )*
@@ -120,6 +125,12 @@ define_cli_error! {
         Runtime { source: clwd_runtime::Error };
 
         Bundle { source: clwd_bundle::Error };
+
+        // A failure the platform decided, carrying its shared envelope's code
+        // verbatim. Ungated: publishing needs no sandbox, so the network client
+        // is unconditional and so is the error it produces. Its `code()` is a
+        // runtime string, which is why `CliError::code` returns `&str`.
+        Platform { source: crate::platform::PlatformError };
     }
 
     owned {
@@ -167,6 +178,18 @@ define_cli_error! {
         step: &'static str,
         detail: String,
     } => "cli.build_failed";
+
+    /// A network-layer failure with no HTTP response: connection refused, timed
+    /// out, TLS handshake failed. The one publish failure the platform never
+    /// gets to describe, because nothing reached it — so unlike a delegated
+    /// `control-plane.*` code, this one is the CLI's own. `retryable` follows
+    /// the transport rather than being fixed: a timeout or a refused connection
+    /// may succeed on a later attempt.
+    #[error("could not reach the platform: {detail}")]
+    Net {
+        detail: String,
+        retryable: bool,
+    } => "net.unreachable";
 
     /// Last resort only. Never returned where a specific variant fits: an
     /// `anyhow` source inside a library error type is tolerable as a genuine
@@ -217,7 +240,7 @@ impl CliError {
     /// `json_error_keeps_a_null_hint_rather_than_dropping_the_key`, and
     /// narrowing the type here would make that shape unrepresentable if a
     /// future variant genuinely has no next step.
-    pub fn hint(&self) -> Option<&'static str> {
+    pub fn hint(&self) -> Option<&str> {
         match self {
             // Delegated codes get a pointer to the table rather than a hint of
             // their own. There are 44 of them, and writing per-code advice here
@@ -231,6 +254,8 @@ impl CliError {
             #[cfg(feature = "run")]
             Self::Runtime { .. } => Some(DELEGATED_HINT),
             Self::Bundle { .. } => Some(DELEGATED_HINT),
+            // The platform supplies its own hint in the envelope; forward it.
+            Self::Platform { source } => source.hint(),
             Self::InvalidArgument { .. } => Some("run `clwd <command> --help` for accepted values"),
             Self::NotFound { .. } => Some(
                 "check the name for typos, and run the matching `list` command to see what exists",
@@ -252,6 +277,9 @@ impl CliError {
             Self::BuildFailed { .. } => {
                 Some("the step's own output is above; fix what it reports and build again")
             }
+            Self::Net { .. } => {
+                Some("check the platform URL and your network connection, then try again")
+            }
             Self::Internal { .. } => Some("this is a bug in clwd; please report it"),
         }
     }
@@ -260,8 +288,9 @@ impl CliError {
     ///
     /// Every arm is spelled out rather than collapsed into a default so that
     /// adding a variant forces a decision here instead of inheriting `false`.
-    /// Nothing is retryable yet — the transient classes (`net.*`, `runtime.*`)
-    /// arrive with the issues that can actually return them.
+    /// The transient classes arrive with the issues that return them: `net.*`
+    /// carries a transport-derived flag, and a platform `429` forwards the
+    /// envelope's `retryable: true`.
     pub fn retryable(&self) -> bool {
         match self {
             // `clwd_bundle::Error::retryable` exists and is `false` for its whole
@@ -281,6 +310,12 @@ impl CliError {
             // this one repeats it. If a `bundle.*` code ever becomes retryable,
             // that decision lands here without an edit.
             Self::Bundle { source } => source.retryable(),
+            // Forwarded from the platform envelope — a `429` says `true`, the
+            // rest say `false`, and the platform owns that decision.
+            Self::Platform { source } => source.retryable(),
+            // Carried on the variant: set from the transport at the point of
+            // failure (a timeout or a refused connection may succeed later).
+            Self::Net { retryable, .. } => *retryable,
             Self::InvalidArgument { .. }
             | Self::NotFound { .. }
             | Self::NotImplemented { .. }
@@ -317,6 +352,10 @@ pub(crate) mod tests {
                 step: "x",
                 detail: "x".into(),
             },
+            CliError::Net {
+                detail: "x".into(),
+                retryable: false,
+            },
             CliError::Internal {
                 source: anyhow::anyhow!("x"),
             },
@@ -331,7 +370,10 @@ pub(crate) mod tests {
 
     #[test]
     fn codes_are_exhaustive_over_variants() {
-        let produced: BTreeSet<&str> = samples().iter().map(CliError::code).collect();
+        // Bound rather than chained: `code()` borrows the error, so the `Vec`
+        // must outlive the `&str`s collected from it.
+        let samples = samples();
+        let produced: BTreeSet<&str> = samples.iter().map(CliError::code).collect();
         let declared: BTreeSet<&str> = CODES.iter().copied().collect();
         assert_eq!(
             produced, declared,

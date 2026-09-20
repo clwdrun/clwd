@@ -53,6 +53,7 @@ retryable, a per-code mapping would be a second compatibility surface for no gai
 | [`cli.toolchain_missing`](#clitoolchain_missing) | `fix_permissions` | yes |
 | [`cli.build_failed`](#clibuild_failed) | `fix_input` | yes |
 | [`cli.internal`](#cliinternal) | `report_bug` | yes |
+| [`net.unreachable`](#netunreachable) | `retry` | yes |
 | [`runtime.bundle_not_found`](#runtimebundle_not_found) | `fix_input` | yes |
 | [`runtime.deadline_exceeded`](#runtimedeadline_exceeded) | `retry` | yes |
 | [`runtime.stopped`](#runtimestopped) | `retry` | yes |
@@ -165,6 +166,18 @@ clwd hit a problem it does not have a specific explanation for. This is always a
 **What to do:** Nothing the caller can change will help. Report it at https://github.com/clwdrun/clwd/issues with the command that produced it.
 
 *Recovery:* `report_bug` · *Reachable:* yes
+
+## `net.*` — reaching a platform
+
+Decided by clwd on your machine when a command that talks to a platform could not reach one. The request never arrived, so no platform could say what went wrong. Every code here can reach a CLI user today.
+
+### `net.unreachable`
+
+A command that talks to a platform — `clwd publish` — could not reach one. The connection was refused, timed out, or failed to establish a secure channel, so no platform ever saw the request and none could say what was wrong. This is the network between you and the platform, not the platform itself.
+
+**What to do:** Check the platform URL (the `--platform` flag or `CLWD_PLATFORM_URL`) and that you have a working connection, then run the command again. A publish is safe to repeat: the platform records a version once per bundle, so a retry never creates a duplicate.
+
+*Recovery:* `retry` · *Reachable:* yes
 
 ## `runtime.*` — running an app
 

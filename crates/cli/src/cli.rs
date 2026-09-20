@@ -109,8 +109,28 @@ pub enum Command {
         #[arg(long)]
         no_optimize: bool,
     },
-    /// Publish a built bundle
-    Publish,
+    /// Publish a built bundle as a new version of an app
+    Publish {
+        /// The bundle to publish — the `.clwd` file `clwd build` produced.
+        bundle: std::path::PathBuf,
+
+        /// The app to publish to, as its platform id (a UUID).
+        ///
+        /// This is the app's platform identity, not the `[app] name` in
+        /// `clwd.toml` — that name scopes local secrets and is a different
+        /// identifier. The platform mints the id; there is no self-serve route
+        /// to create one yet, so `--app` names an app that already exists.
+        #[arg(long)]
+        app: String,
+
+        /// The platform base URL. Defaults to `$CLWD_PLATFORM_URL`.
+        ///
+        /// The token is read from `$CLWD_TOKEN` or the `0600` credentials file,
+        /// never a flag: a token on the command line lands in `ps` and shell
+        /// history for every process on the machine.
+        #[arg(long)]
+        platform: Option<String>,
+    },
     /// Stream logs for an app
     Logs {
         /// Keep the stream open and print lines as they arrive

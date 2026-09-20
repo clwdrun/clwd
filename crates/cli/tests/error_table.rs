@@ -30,7 +30,7 @@
 //! # Why the prose lives here and not beside each variant
 //!
 //! "Documentation lives next to the thing it documents" is the usual instinct,
-//! and someone will want to move these 49 entries onto their `error.rs`
+//! and someone will want to move these 50 entries onto their `error.rs`
 //! variants. Resist it. Completeness is enforced either way — a variant with no
 //! row fails `table_covers_every_code_and_invents_none` — so the only thing at
 //! stake is whether the writing is any good. The 38 `bundle.*` entries are one
@@ -124,6 +124,9 @@ impl Reach {
             // Before #25 nothing constructed a delegating variant, so every one
             // of these was unreachable.
             "runtime" | "bundle" => Self::Now,
+            // `net.*` is owned by the CLI and reachable since #26: `clwd publish`
+            // makes an HTTP call, and a failure with no response is `net.*`.
+            "net" => Self::Now,
             other => panic!("no reachability rule for the {other:?} namespace"),
         }
     }
@@ -223,6 +226,20 @@ const TABLE: &[Row] = &[
                    https://github.com/clwdrun/clwd/issues with the command that produced \
                    it.",
         action: Recovery::ReportBug,
+    },
+    // ---- net.* — decided by clwd-cli, for a call that reached no platform ----
+    Row {
+        code: "net.unreachable",
+        meaning: "A command that talks to a platform — `clwd publish` — could not reach one. \
+                  The connection was refused, timed out, or failed to establish a secure \
+                  channel, so no platform ever saw the request and none could say what was \
+                  wrong. This is the network between you and the platform, not the platform \
+                  itself.",
+        recovery: "Check the platform URL (the `--platform` flag or `CLWD_PLATFORM_URL`) and \
+                   that you have a working connection, then run the command again. A publish \
+                   is safe to repeat: the platform records a version once per bundle, so a \
+                   retry never creates a duplicate.",
+        action: Recovery::Retry,
     },
     // ---- runtime.* — decided by clwd-runtime ----
     Row {
@@ -670,6 +687,13 @@ fn render() -> String {
             "cli.",
             "`cli.*` — the command line itself",
             "Decided by clwd on your machine, before anything is built or run.",
+        ),
+        (
+            "net.",
+            "`net.*` — reaching a platform",
+            "Decided by clwd on your machine when a command that talks to a platform \
+             could not reach one. The request never arrived, so no platform could say \
+             what went wrong.",
         ),
         (
             "runtime.",
