@@ -1,0 +1,420 @@
+//! The publish HTTP call, and the two shapes it turns a response into.
+//!
+//! A success (`201` or `200`) becomes a [`Published`]; every 4xx/5xx becomes a
+//! [`CliError::Platform`] carrying the platform's own code; a failure with no
+//! HTTP response at all — connection refused, timed out, TLS — becomes the one
+//! CLI-owned network code, [`CliError::Net`], because nothing reached the
+//! platform for it to describe.
+
+use serde::{Deserialize, Serialize};
+
+use super::{AppId, PlatformError, PlatformUrl, Token};
+use crate::error::CliError;
+
+/// The version resource the platform returns on a successful publish.
+///
+/// The same body is sent for a freshly created version and one that already
+/// existed; `platform#7` puts created-vs-existed in the status code and refused
+/// a `created` field, so this type carries no such field either — [`Published`]
+/// derives it from the status, once, at the boundary.
+#[derive(Debug, Deserialize)]
+struct VersionResource {
+    /// The version's own id.
+    id: String,
+    /// The app it belongs to.
+    app_id: String,
+    /// The content address, as `blake3:<64 hex>`.
+    digest: String,
+    /// `pending`, `ready`, or `failed` — whatever it was when the row returned.
+    state: String,
+}
+
+/// The shared error envelope, as it arrives on the wire.
+#[derive(Debug, Deserialize)]
+struct Envelope {
+    code: String,
+    message: String,
+    hint: Option<String>,
+    retryable: bool,
+}
+
+/// A published version, as the CLI reports it.
+///
+/// `created` is the CLI's own reading of the response status — `true` for a
+/// `201`, `false` for a `200 already existed`. It is a presentation of the
+/// platform's fact, derived at the boundary, not a second copy of it on the wire.
+#[must_use]
+#[derive(Debug, Serialize)]
+#[non_exhaustive]
+pub struct Published {
+    /// The app the version belongs to.
+    pub app_id: String,
+    /// The version's id.
+    pub version_id: String,
+    /// The content address the platform recorded.
+    pub digest: String,
+    /// The lifecycle state at the moment of the response.
+    pub state: String,
+    /// Whether this call created the version (`201`) or found it already there
+    /// (`200`). Idempotency made visible, not an error.
+    pub created: bool,
+}
+
+impl VersionResource {
+    fn into_published(self, created: bool) -> Published {
+        Published {
+            app_id: self.app_id,
+            version_id: self.id,
+            digest: self.digest,
+            state: self.state,
+            created,
+        }
+    }
+}
+
+impl std::fmt::Display for Published {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.created {
+            writeln!(f, "published version {} ({})", self.version_id, self.state)?;
+        } else {
+            writeln!(
+                f,
+                "version {} already existed ({})",
+                self.version_id, self.state
+            )?;
+        }
+        writeln!(f, "  app:    {}", self.app_id)?;
+        write!(f, "  digest: {}", self.digest)
+    }
+}
+
+/// Upload `bundle` as a new version of `app`.
+///
+/// The bundle is already fully in memory — `clwd-bundle` has no streaming API
+/// (`#6`) — so it is sent as one body rather than pretending to stream. The
+/// platform enforces its own size ceiling and returns `413` over it; the CLI
+/// does not keep a second copy of that limit to check against.
+pub async fn publish(
+    url: &PlatformUrl,
+    app: &AppId,
+    token: &Token,
+    bundle: Vec<u8>,
+) -> Result<Published, CliError> {
+    let endpoint = url.versions_endpoint(app)?;
+    let client = reqwest::Client::builder().build().map_err(pure_network)?;
+
+    let response = client
+        .post(endpoint)
+        .bearer_auth(token.as_bearer())
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .body(bundle)
+        .send()
+        .await
+        .map_err(pure_network)?;
+
+    let status = response.status();
+    if status.is_success() {
+        let created = status == reqwest::StatusCode::CREATED;
+        let version = response
+            .json::<VersionResource>()
+            .await
+            .map_err(|e| CliError::Internal {
+                source: anyhow::Error::new(e)
+                    .context("the platform's success response was not a version resource"),
+            })?;
+        Ok(version.into_published(created))
+    } else {
+        Err(platform_error(response).await)
+    }
+}
+
+/// Map a response the platform decided was a failure onto its own code.
+///
+/// The `Retry-After` header rides alongside a `429`'s `retryable: true`. When
+/// the platform gives no hint of its own, the header becomes one so the caller
+/// still learns how long to wait; when it does, the platform's hint is kept
+/// verbatim.
+async fn platform_error(response: reqwest::Response) -> CliError {
+    let status = response.status();
+    let retry_after = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.trim().parse::<u64>().ok());
+
+    match response.json::<Envelope>().await {
+        Ok(envelope) => {
+            let hint = envelope
+                .hint
+                .or_else(|| retry_after.map(|s| format!("retry after {s}s")));
+            CliError::Platform {
+                source: PlatformError::new(
+                    envelope.code,
+                    envelope.message,
+                    hint,
+                    envelope.retryable,
+                ),
+            }
+        }
+        // `platform#53` guarantees the envelope on every 4xx/5xx, so a body that
+        // is not one is a broken contract, not a normal outcome — an internal
+        // error naming the status, rather than a delegated code we cannot read.
+        Err(e) => CliError::Internal {
+            source: anyhow::Error::new(e).context(format!(
+                "the platform returned {status} without the shared error envelope"
+            )),
+        },
+    }
+}
+
+/// A failure with no HTTP response: connection refused, timed out, TLS handshake
+/// failed. The one publish failure the platform never describes, so the CLI owns
+/// the code. `retryable` follows the transport: a timeout or a refused connection
+/// may succeed on a later attempt.
+fn pure_network(e: reqwest::Error) -> CliError {
+    CliError::Net {
+        retryable: e.is_timeout() || e.is_connect(),
+        detail: e.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::net::{TcpListener, TcpStream};
+
+    const TOKEN: &str = "clwd_tok_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const APP: &str = "018f5b2a-0000-7000-8000-000000000000";
+
+    /// What the mock server saw the CLI send. Asserting on this is how a test of
+    /// what the CLI *sends* stays honest — it is captured from a real socket, not
+    /// from the request object the CLI built.
+    struct Captured {
+        method: String,
+        path: String,
+        authorization: Option<String>,
+        content_type: Option<String>,
+        body: Vec<u8>,
+    }
+
+    fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+        haystack.windows(needle.len()).position(|w| w == needle)
+    }
+
+    async fn read_request(stream: &mut TcpStream) -> Captured {
+        let mut buf = Vec::new();
+        let mut tmp = [0u8; 1024];
+        let header_end = loop {
+            if let Some(pos) = find(&buf, b"\r\n\r\n") {
+                break pos;
+            }
+            let n = stream.read(&mut tmp).await.expect("read headers");
+            if n == 0 {
+                break buf.len();
+            }
+            buf.extend_from_slice(&tmp[..n]);
+        };
+
+        let head = String::from_utf8_lossy(&buf[..header_end]).into_owned();
+        let mut lines = head.split("\r\n");
+        let request_line = lines.next().unwrap_or_default();
+        let mut parts = request_line.split_whitespace();
+        let method = parts.next().unwrap_or_default().to_owned();
+        let path = parts.next().unwrap_or_default().to_owned();
+
+        let mut authorization = None;
+        let mut content_type = None;
+        let mut content_length = 0usize;
+        for line in lines {
+            if let Some((k, v)) = line.split_once(':') {
+                let (k, v) = (k.trim().to_ascii_lowercase(), v.trim());
+                match k.as_str() {
+                    "authorization" => authorization = Some(v.to_owned()),
+                    "content-type" => content_type = Some(v.to_owned()),
+                    "content-length" => content_length = v.parse().unwrap_or(0),
+                    _ => {}
+                }
+            }
+        }
+
+        let mut body = buf[header_end + 4..].to_vec();
+        while body.len() < content_length {
+            let n = stream.read(&mut tmp).await.expect("read body");
+            if n == 0 {
+                break;
+            }
+            body.extend_from_slice(&tmp[..n]);
+        }
+
+        Captured {
+            method,
+            path,
+            authorization,
+            content_type,
+            body,
+        }
+    }
+
+    /// Start a one-shot server that returns `(status, extra_headers, body)` and
+    /// hands back what it received. `extra_headers` is raw, e.g. `"Retry-After: 30\r\n"`.
+    async fn serve_once(
+        status: u16,
+        reason: &'static str,
+        extra_headers: &'static str,
+        body: String,
+    ) -> (String, tokio::task::JoinHandle<Captured>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        let handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let captured = read_request(&mut stream).await;
+            let response = format!(
+                "HTTP/1.1 {status} {reason}\r\n\
+                 Content-Type: application/json\r\n\
+                 {extra_headers}\
+                 Content-Length: {len}\r\n\
+                 Connection: close\r\n\r\n{body}",
+                len = body.len()
+            );
+            stream
+                .write_all(response.as_bytes())
+                .await
+                .expect("write response");
+            stream.flush().await.expect("flush");
+            captured
+        });
+        (format!("http://{addr}"), handle)
+    }
+
+    fn version_body(state: &str) -> String {
+        format!(
+            r#"{{"id":"018f5b2a-1111-7000-8000-000000000001","app_id":"{APP}",
+                "digest":"blake3:{hex}","state":"{state}",
+                "created_at":"2026-09-20T00:00:00Z"}}"#,
+            hex = "a".repeat(64)
+        )
+    }
+
+    async fn call(base: &str, bundle: &[u8]) -> Result<Published, CliError> {
+        let url = PlatformUrl::parse(base).expect("valid base");
+        let app = AppId::parse(APP).expect("valid app");
+        let token = Token::parse(TOKEN).expect("valid token");
+        publish(&url, &app, &token, bundle.to_vec()).await
+    }
+
+    #[tokio::test]
+    async fn a_201_creates_a_version_and_the_request_is_well_formed() {
+        let (base, server) = serve_once(201, "Created", "", version_body("ready")).await;
+        let bundle = b"the actual bundle bytes".to_vec();
+
+        let published = call(&base, &bundle).await.expect("publish succeeds");
+        assert!(published.created, "a 201 is a creation");
+        assert_eq!(published.state, "ready");
+        assert_eq!(published.version_id, "018f5b2a-1111-7000-8000-000000000001");
+
+        // What the platform actually received — not what the CLI thinks it sent.
+        let req = server.await.expect("server joined");
+        assert_eq!(req.method, "POST");
+        assert_eq!(req.path, format!("/v1/apps/{APP}/versions"));
+        assert_eq!(
+            req.authorization.as_deref(),
+            Some(format!("Bearer {TOKEN}").as_str())
+        );
+        assert_eq!(
+            req.content_type.as_deref(),
+            Some("application/octet-stream")
+        );
+        assert_eq!(
+            req.body, bundle,
+            "the bundle bytes must reach the platform intact"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_200_is_already_existed_not_an_error() {
+        let (base, server) = serve_once(200, "OK", "", version_body("ready")).await;
+
+        let published = call(&base, b"identical bytes")
+            .await
+            .expect("200 is success");
+        assert!(
+            !published.created,
+            "a 200 means the version already existed"
+        );
+        server.await.expect("server joined");
+    }
+
+    /// The test that matters: a well-formed UUID that names no app returns 404,
+    /// and the CLI must surface the platform's code, not mangle or wrap it.
+    #[tokio::test]
+    async fn a_missing_app_surfaces_the_platform_not_found() {
+        let body = r#"{"code":"control-plane.not_found","message":"no such app",
+                       "hint":"check the app id","retryable":false}"#
+            .to_owned();
+        let (base, server) = serve_once(404, "Not Found", "", body).await;
+
+        let err = call(&base, b"bytes").await.expect_err("404 is an error");
+        assert_eq!(err.code(), "control-plane.not_found");
+        assert!(!err.retryable());
+        server.await.expect("server joined");
+    }
+
+    #[tokio::test]
+    async fn a_forbidden_token_surfaces_the_platform_code_verbatim() {
+        let body = r#"{"code":"identity.forbidden","message":"token lacks publish scope",
+                       "hint":"request a token with the publish scope","retryable":false}"#
+            .to_owned();
+        let (base, server) = serve_once(403, "Forbidden", "", body).await;
+
+        let err = call(&base, b"bytes").await.expect_err("403 is an error");
+        assert_eq!(err.code(), "identity.forbidden");
+        assert_ne!(err.code(), "cli.internal", "must not be wrapped");
+        server.await.expect("server joined");
+    }
+
+    #[tokio::test]
+    async fn a_429_preserves_retryable_and_the_retry_after() {
+        // Platform gives no hint, so the Retry-After becomes one.
+        let body = r#"{"code":"control-plane.rate_limited","message":"slow down",
+                       "hint":null,"retryable":true}"#
+            .to_owned();
+        let (base, server) =
+            serve_once(429, "Too Many Requests", "Retry-After: 30\r\n", body).await;
+
+        let err = call(&base, b"bytes").await.expect_err("429 is an error");
+        assert_eq!(err.code(), "control-plane.rate_limited");
+        assert!(err.retryable(), "the back-off signal must survive");
+        assert_eq!(err.hint(), Some("retry after 30s"));
+        server.await.expect("server joined");
+    }
+
+    /// A connection refused — nothing answered — is the CLI-owned network code.
+    #[tokio::test]
+    async fn a_connection_refused_is_a_cli_network_error() {
+        // Port 1 on loopback refuses; no server is listening.
+        let err = call("http://127.0.0.1:1", b"bytes")
+            .await
+            .expect_err("nothing is listening");
+        assert_eq!(err.code(), "net.unreachable");
+        assert!(err.retryable(), "a refused connection may succeed on retry");
+    }
+
+    /// The positive control: no token value ever reaches rendered output.
+    #[tokio::test]
+    async fn the_token_never_appears_in_a_rendered_result() {
+        let (base, server) = serve_once(201, "Created", "", version_body("pending")).await;
+
+        let published = call(&base, b"bytes").await.expect("succeeds");
+        let json = serde_json::to_string(&published).expect("serializes");
+        assert!(
+            !json.contains("clwd_tok"),
+            "a token leaked into JSON output: {json}"
+        );
+        assert!(
+            !format!("{published}").contains("clwd_tok"),
+            "a token leaked into Display"
+        );
+        server.await.expect("server joined");
+    }
+}

@@ -133,7 +133,15 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
             commands::build::execute(project, dest.clone(), !no_optimize, progress),
             out,
         ),
-        Command::Publish => emit(format, commands::publish::execute(progress), out),
+        Command::Publish {
+            bundle,
+            app,
+            platform,
+        } => emit(
+            format,
+            commands::publish::execute(bundle, app, platform.as_deref(), progress),
+            out,
+        ),
         Command::Logs { follow } => logs(*follow, progress, format, out),
         Command::Secrets { action, project } => secrets(action, project, format, out),
         Command::Mcp => emit(format, commands::mcp::execute(progress), out),

@@ -10,6 +10,7 @@ pub mod build;
 pub mod cli;
 pub mod commands;
 pub mod error;
+pub mod platform;
 pub mod render;
 pub mod secrets;
 
