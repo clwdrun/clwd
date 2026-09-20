@@ -286,6 +286,19 @@ const TABLE: &[Row] = &[
         action: Recovery::Rebuild,
     },
     Row {
+        code: "runtime.capability_denied",
+        meaning: "The app tried to use something its manifest does not grant: an outbound \
+                  request to a host not in `capabilities.egress`, or persistent storage \
+                  while `capabilities.storage_namespaces` is empty. Permissions are \
+                  deny-by-default — anything not granted is refused — so this usually means \
+                  a grant is missing rather than that anything is broken.",
+        recovery: "Add the host to `egress`, or a name to `storage_namespaces` to enable \
+                   app-data, in `clwd.toml` under `[capabilities]`, then rebuild with `clwd \
+                   build`. If the app should not be reaching that host at all, the denial \
+                   is working as intended.",
+        action: Recovery::FixInput,
+    },
+    Row {
         code: "runtime.internal",
         meaning: "The sandbox hit a problem it does not have a specific explanation for. \
                   This is a defect in clwd rather than in the app.",

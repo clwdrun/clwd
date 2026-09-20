@@ -46,7 +46,7 @@ fn guest_bundle(world: &WorldSpec, marker: Option<&str>) -> (BundleRef, Vec<u8>)
             version: 1,
             egress: Vec::new(),
             secrets,
-            storage_namespaces: Vec::new(),
+            storage_namespaces: vec!["app".to_owned()],
             limits: Limits {
                 cpu_ms: world.cpu_ms,
                 memory_mb: world.memory_mb,

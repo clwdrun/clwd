@@ -39,6 +39,8 @@ pub(super) struct InstanceContext {
     pub(super) secrets: std::collections::HashMap<String, Vec<u8>>,
     pub(super) app: crate::wasm::data::AppId,
     pub(super) app_data: Arc<dyn crate::wasm::data::AppDataStore>,
+    pub(super) egress: crate::wasm::capability::EgressPolicy,
+    pub(super) storage: crate::wasm::capability::StoragePolicy,
 }
 
 pub(super) async fn run(
@@ -55,6 +57,8 @@ pub(super) async fn run(
         secrets,
         app,
         app_data,
+        egress,
+        storage,
     } = context;
     let (stdout, stderr) = host::sinks();
     let mut store = Store::new(
@@ -65,6 +69,8 @@ pub(super) async fn run(
             secrets,
             app,
             app_data,
+            egress,
+            storage,
             stdout.clone(),
             stderr.clone(),
         ),
