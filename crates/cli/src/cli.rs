@@ -91,7 +91,18 @@ pub enum Command {
         backend: Option<Backend>,
     },
     /// Run an app locally, reloading it as sources change
-    Dev,
+    Dev {
+        /// The project to serve. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        project: std::path::PathBuf,
+
+        /// The port to listen on. A fixed default rather than an auto-picked
+        /// free port: a dev server's URL is one an author types and bookmarks,
+        /// so it should not move when something else is using the port — the
+        /// clear "in use" error tells them to pass `--port` instead.
+        #[arg(long, default_value_t = 8787)]
+        port: u16,
+    },
     /// Build an app into a deployable bundle
     Build {
         /// The project to build. Defaults to the current directory.

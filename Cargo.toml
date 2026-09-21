@@ -74,6 +74,10 @@ http = "1"
 bytes = "1"
 http-body-util = "0.1"
 
+# clwd-cli (clwd dev — long-lived local HTTP server + file watcher)
+hyper-util = { version = "0.1", features = ["tokio", "server", "server-graceful", "http1"] }
+notify = "8"
+
 # clwd-bundle
 blake3 = { version = "1", default-features = false }
 toml = "1"

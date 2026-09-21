@@ -123,7 +123,11 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
             backend,
             project,
         } => run(bundle, path, *backend, project, progress, format, out),
-        Command::Dev => emit(format, commands::dev::execute(progress), out),
+        // `dev` is a long-lived interactive server: its request log, guest logs
+        // and reload notices are `tracing` events (the library may not print),
+        // which `dev()` renders to stderr. It returns only on Ctrl-C or a
+        // startup failure, so it does not render a value through `emit`.
+        Command::Dev { project, port } => dev(project, *port, progress),
         Command::Build {
             project,
             out: dest,
@@ -229,6 +233,35 @@ fn run(
     _out: &mut dyn Write,
 ) -> Result<(), CliError> {
     Err(CliError::NotImplemented { command: "run" })
+}
+
+/// Run the dev server, rendering its `tracing` events to stderr in a minimal
+/// format — just the message, no timestamp/level/target noise. Installing the
+/// subscriber is the binary's job: the library emits events, it never prints.
+#[cfg(feature = "run")]
+fn dev(
+    project: &std::path::Path,
+    port: u16,
+    progress: Option<&dyn Progress>,
+) -> Result<(), CliError> {
+    let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .without_time()
+        .with_target(false)
+        .with_level(false)
+        .try_init();
+    commands::dev::execute(project, port, progress)
+}
+
+/// Without the `run` feature there is no server; the subcommand still parses and
+/// returns `cli.not_implemented`.
+#[cfg(not(feature = "run"))]
+fn dev(
+    project: &std::path::Path,
+    port: u16,
+    progress: Option<&dyn Progress>,
+) -> Result<(), CliError> {
+    commands::dev::execute(project, port, progress)
 }
 
 /// Render one successful value, or pass the error up to `main` to render.
