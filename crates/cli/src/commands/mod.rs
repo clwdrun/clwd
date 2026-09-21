@@ -7,6 +7,10 @@
 pub mod build;
 pub mod dev;
 pub mod init;
+/// Sandbox construction shared by `run` and `dev`. Behind `run` because it
+/// links the runtime; the one place either command builds a local sandbox.
+#[cfg(feature = "run")]
+pub(crate) mod local;
 pub mod logs;
 pub mod mcp;
 pub mod publish;
