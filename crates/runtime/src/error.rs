@@ -135,6 +135,19 @@ define_error! {
         #[error("guest trapped: {message}")]
         Trap { message: String } => "runtime.trap";
 
+        /// A guest was refused a capability its manifest did not grant: an
+        /// outbound request to an undeclared host, or an app-data operation when
+        /// the manifest grants no storage.
+        ///
+        /// Host-side and deny-by-default. The `detail` names the specific host
+        /// or namespace for the app owner's logs; it is NOT what the guest sees.
+        /// A guest receives only a generic `wasi:http` `HttpRequestDenied` or
+        /// app-data `invalid-key`, because an untrusted guest must not be able to
+        /// probe which host or namespace it was blocked from — see the module
+        /// docs in `wasm/capability.rs`.
+        #[error("capability denied: {detail}")]
+        CapabilityDenied { detail: String } => "runtime.capability_denied";
+
         /// Last resort only, never where a specific variant fits. A boxed
         /// opaque source in a library error type is tolerable as a genuine
         /// fallback and corrosive as a default.
@@ -190,6 +203,9 @@ mod tests {
             Error::Stopped {},
             Error::Trap {
                 message: "unreachable".into(),
+            },
+            Error::CapabilityDenied {
+                detail: "egress to \"x\" is not in the manifest allowlist".into(),
             },
             Error::ResourceExhausted {
                 limit: "memory",

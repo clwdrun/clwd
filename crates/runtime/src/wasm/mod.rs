@@ -42,6 +42,7 @@
 
 mod budget;
 mod cache;
+mod capability;
 mod data;
 mod engine;
 mod epoch;
@@ -65,6 +66,7 @@ use parking_lot::Mutex;
 
 use budget::Budget;
 use cache::ComponentCache;
+use capability::{EgressPolicy, StoragePolicy};
 pub use data::{
     AppDataStore, AppId, AppIdResolver, DigestAsAppId, MemoryAppDataStore, MemorySecretStore,
     SecretStore,
@@ -122,6 +124,11 @@ struct Instance {
     /// Resolved once, from the manifest the digest sealed. Kept here so
     /// `invoke` needs no second decode on the cache-hit path.
     budget: Budget,
+    /// The outbound-egress allowlist, precomputed once at spawn from the
+    /// manifest. Deny-by-default: an empty grant denies every host.
+    egress: EgressPolicy,
+    /// The storage-namespace allowlist, precomputed once at spawn. Deny-by-default.
+    storage: StoragePolicy,
     logs: Arc<InstanceLogs>,
     stopped: bool,
 }
@@ -228,13 +235,21 @@ impl WasmSandbox {
     /// Separating them puts the extraction one edit away from being done
     /// without the validation, or the validation one edit away from being
     /// dropped as redundant.
-    async fn entrypoint(&self, bundle: &BundleRef) -> Result<(Vec<u8>, Budget, Vec<String>)> {
+    async fn entrypoint(
+        &self,
+        bundle: &BundleRef,
+    ) -> Result<(Vec<u8>, Budget, Vec<String>, EgressPolicy, StoragePolicy)> {
         let bytes = self.store.fetch(bundle).await?;
         let decoded = clwd_bundle::decode(&bytes, Some(*bundle))?;
         let budget = Budget::from_manifest(&decoded.manifest.capabilities.limits);
         // The names the manifest declares. What the store will authorise of
         // these is decided at spawn; the manifest can narrow, never grant.
         let declared = decoded.manifest.capabilities.secrets.clone();
+        // The egress and storage allowlists, compiled once here from the sealed
+        // manifest so the per-request checks parse and resolve nothing.
+        let egress = EgressPolicy::from_manifest(&decoded.manifest.capabilities.egress);
+        let storage =
+            StoragePolicy::from_manifest(&decoded.manifest.capabilities.storage_namespaces);
         let entrypoint = &decoded.manifest.entrypoint;
         let data = decoded
             .members
@@ -244,7 +259,7 @@ impl WasmSandbox {
             .ok_or_else(|| Error::Internal {
                 source: format!("entrypoint {entrypoint:?} missing after validation").into(),
             })?;
-        Ok((data, budget, declared))
+        Ok((data, budget, declared, egress, storage))
     }
 }
 
@@ -257,7 +272,7 @@ impl Sandbox for WasmSandbox {
         opts: SpawnOptions,
     ) -> Result<Handle> {
         let deadline = opts.deadline;
-        let (bytes, budget, declared_secrets) = self.entrypoint(&bundle).await?;
+        let (bytes, budget, declared_secrets, egress, storage) = self.entrypoint(&bundle).await?;
 
         let expired = || Error::DeadlineExceeded {
             phase: Phase::Spawn,
@@ -302,6 +317,8 @@ impl Sandbox for WasmSandbox {
                 app,
                 secrets,
                 budget,
+                egress,
+                storage,
                 logs: Arc::new(InstanceLogs::default()),
                 stopped: false,
             },
@@ -310,7 +327,7 @@ impl Sandbox for WasmSandbox {
     }
 
     async fn invoke(&self, handle: &Handle, req: Request, opts: InvokeOptions) -> Result<Response> {
-        let (bundle, budget, app, secrets, logs) = {
+        let (bundle, budget, app, secrets, egress, storage, logs) = {
             let instances = self.instances.lock();
             let instance = instances
                 .get(handle.instance())
@@ -321,6 +338,8 @@ impl Sandbox for WasmSandbox {
                 instance.budget,
                 instance.app.clone(),
                 instance.secrets.clone(),
+                instance.egress.clone(),
+                instance.storage.clone(),
                 Arc::clone(&instance.logs),
             )
         };
@@ -343,7 +362,7 @@ impl Sandbox for WasmSandbox {
         let component = match self.cache.get(&bundle) {
             Some(prepared) => prepared,
             None => {
-                let (bytes, _, _) = self.entrypoint(&bundle).await?;
+                let (bytes, ..) = self.entrypoint(&bundle).await?;
                 self.cache.get_or_compile(&bundle, &bytes).await?
             }
         };
@@ -357,6 +376,8 @@ impl Sandbox for WasmSandbox {
                 secrets,
                 app,
                 app_data: Arc::clone(&self.app_data),
+                egress,
+                storage,
             },
             req,
             opts.request_id.clone(),

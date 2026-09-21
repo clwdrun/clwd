@@ -18,7 +18,7 @@ pub fn valid_bundle() -> (BundleRef, Vec<u8>) {
             version: 1,
             egress: Vec::new(),
             secrets: Vec::new(),
-            storage_namespaces: Vec::new(),
+            storage_namespaces: vec!["app".to_owned()],
             limits: Limits {
                 cpu_ms: 5000,
                 memory_mb: 128,

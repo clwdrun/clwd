@@ -12,11 +12,12 @@
 
 use wasmtime::component::ResourceTable;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
-use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpHooks, WasiHttpView};
+use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 
 use crate::identity::{Caller, IdentityCtx, Role};
 use crate::logs::LogStreamKind;
 use crate::wasm::budget::Budget;
+use crate::wasm::capability::{EgressHooks, EgressPolicy, StoragePolicy};
 use crate::wasm::data::{AppDataStore, AppId, MIN_VALUE_LIMIT, validate_key};
 use crate::wasm::limits::BudgetLimiter;
 use crate::wasm::logs::LogSink;
@@ -45,7 +46,11 @@ use clwd::identity::types as wit;
 pub(super) struct StoreState {
     wasi: WasiCtx,
     http: WasiHttpCtx,
-    hooks: DefaultHooks,
+    /// The outbound-egress allowlist, as `wasi:http` hooks. Denies by construction
+    /// when the manifest granted no egress.
+    hooks: EgressHooks,
+    /// The storage-namespace allowlist, checked on every app-data operation.
+    storage: StoragePolicy,
     table: ResourceTable,
     /// The one caller this `Store` serves. Read-only: there is no setter, and
     /// the value arrives by move at construction.
@@ -67,17 +72,16 @@ pub(super) struct StoreState {
     app_data: Arc<dyn AppDataStore>,
 }
 
-#[derive(Default)]
-pub(super) struct DefaultHooks;
-impl WasiHttpHooks for DefaultHooks {}
-
 impl StoreState {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         identity: IdentityCtx,
         budget: &Budget,
         secrets: HashMap<String, Vec<u8>>,
         app: AppId,
         app_data: Arc<dyn AppDataStore>,
+        egress: EgressPolicy,
+        storage: StoragePolicy,
         stdout: LogSink,
         stderr: LogSink,
     ) -> Self {
@@ -85,7 +89,8 @@ impl StoreState {
         Self {
             wasi,
             http: WasiHttpCtx::new(),
-            hooks: DefaultHooks,
+            hooks: EgressHooks::new(egress),
+            storage,
             table: ResourceTable::new(),
             identity,
             limiter: BudgetLimiter::new(budget),
@@ -217,9 +222,36 @@ fn store_unavailable(_: crate::error::Error) -> clwd::app_data::store::Error {
     clwd::app_data::store::Error::Unavailable
 }
 
+/// Refuse an app-data operation when the app was not granted storage.
+///
+/// Deny-by-default and on/off: with an empty `storage_namespaces` the app may
+/// not persist data at all (see [`StoragePolicy`] for why gating is boolean, not
+/// per-namespace). The specifics are logged host-side under
+/// `runtime.capability_denied` for the app owner; the guest gets a generic
+/// `invalid-key`, never anything it can probe with (module docs,
+/// `wasm/capability.rs`). The app-data interface has no dedicated "denied"
+/// variant, so `invalid-key` is the closest typed, guest-handleable error — do
+/// not widen it into leaking whether other keys would be accepted.
+fn deny_if_storage_ungranted(
+    storage: &StoragePolicy,
+    key: &str,
+) -> Result<(), clwd::app_data::store::Error> {
+    if storage.allows(key) {
+        return Ok(());
+    }
+    let denied = crate::error::Error::CapabilityDenied {
+        detail: format!("app-data operation on {key:?} but the manifest grants no storage"),
+    };
+    tracing::warn!(code = denied.code(), detail = %denied, "storage access denied");
+    Err(clwd::app_data::store::Error::InvalidKey(
+        "this app is not granted persistent storage".to_owned(),
+    ))
+}
+
 impl clwd::app_data::store::Host for StoreState {
     async fn get(&mut self, key: String) -> Result<Option<Vec<u8>>, clwd::app_data::store::Error> {
         validate_key(&key).map_err(clwd::app_data::store::Error::InvalidKey)?;
+        deny_if_storage_ungranted(&self.storage, &key)?;
         self.app_data
             .get(&self.app, &key)
             .await
@@ -232,6 +264,7 @@ impl clwd::app_data::store::Host for StoreState {
         value: Vec<u8>,
     ) -> Result<(), clwd::app_data::store::Error> {
         validate_key(&key).map_err(clwd::app_data::store::Error::InvalidKey)?;
+        deny_if_storage_ungranted(&self.storage, &key)?;
         if value.len() as u64 > MIN_VALUE_LIMIT {
             return Err(clwd::app_data::store::Error::ValueTooLarge(MIN_VALUE_LIMIT));
         }
@@ -243,9 +276,34 @@ impl clwd::app_data::store::Host for StoreState {
 
     async fn delete(&mut self, key: String) -> Result<(), clwd::app_data::store::Error> {
         validate_key(&key).map_err(clwd::app_data::store::Error::InvalidKey)?;
+        deny_if_storage_ungranted(&self.storage, &key)?;
         self.app_data
             .delete(&self.app, &key)
             .await
             .map_err(store_unavailable)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Deny-by-default at the app-data boundary: with no storage granted, an
+    /// operation is refused and the guest sees a generic `invalid-key` — the one
+    /// typed, handleable error the app-data interface offers for a refusal.
+    #[test]
+    fn an_ungranted_app_data_operation_is_denied() {
+        let ungranted = StoragePolicy::from_manifest(&[]);
+        let err = deny_if_storage_ungranted(&ungranted, "counter")
+            .expect_err("empty storage grant must deny");
+        assert!(matches!(err, clwd::app_data::store::Error::InvalidKey(_)));
+    }
+
+    /// A non-empty grant turns app-data on for any key shape.
+    #[test]
+    fn a_granted_app_may_use_app_data() {
+        let granted = StoragePolicy::from_manifest(&["app".to_owned()]);
+        assert!(deny_if_storage_ungranted(&granted, "counter").is_ok());
+        assert!(deny_if_storage_ungranted(&granted, "u.local.note").is_ok());
     }
 }

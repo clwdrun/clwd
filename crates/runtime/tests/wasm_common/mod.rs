@@ -31,7 +31,7 @@ pub fn bundle_declaring(entry: &[u8], secrets: &[&str]) -> (BundleRef, Vec<u8>) 
             version: 1,
             egress: Vec::new(),
             secrets: secrets.iter().map(|s| (*s).to_owned()).collect(),
-            storage_namespaces: Vec::new(),
+            storage_namespaces: vec!["app".to_owned()],
             limits: Limits {
                 cpu_ms: 5000,
                 memory_mb: 128,
@@ -102,7 +102,7 @@ pub fn bundle_with_limits(entry: &[u8], cpu_ms: u64, memory_mb: u64) -> (BundleR
             version: 1,
             egress: Vec::new(),
             secrets: Vec::new(),
-            storage_namespaces: Vec::new(),
+            storage_namespaces: vec!["app".to_owned()],
             limits: Limits { cpu_ms, memory_mb },
         },
         vec![clwd_bundle::File {

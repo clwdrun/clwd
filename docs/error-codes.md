@@ -59,6 +59,7 @@ retryable, a per-code mapping would be a second compatibility surface for no gai
 | [`runtime.stopped`](#runtimestopped) | `retry` | yes |
 | [`runtime.resource_exhausted`](#runtimeresource_exhausted) | `fix_input` | yes |
 | [`runtime.trap`](#runtimetrap) | `rebuild` | yes |
+| [`runtime.capability_denied`](#runtimecapability_denied) | `fix_input` | yes |
 | [`runtime.internal`](#runtimeinternal) | `report_bug` | yes |
 | [`bundle.not_tar`](#bundlenot_tar) | `rebuild` | yes |
 | [`bundle.magic_invalid`](#bundlemagic_invalid) | `rebuild` | yes |
@@ -222,6 +223,14 @@ The app itself failed — it panicked, hit an assertion, or executed something i
 **What to do:** The message carries the app's own failure text and a backtrace. Fix the app, rebuild with `clwd build`, and run it again.
 
 *Recovery:* `rebuild` · *Reachable:* yes
+
+### `runtime.capability_denied`
+
+The app tried to use something its manifest does not grant: an outbound request to a host not in `capabilities.egress`, or persistent storage while `capabilities.storage_namespaces` is empty. Permissions are deny-by-default — anything not granted is refused — so this usually means a grant is missing rather than that anything is broken.
+
+**What to do:** Add the host to `egress`, or a name to `storage_namespaces` to enable app-data, in `clwd.toml` under `[capabilities]`, then rebuild with `clwd build`. If the app should not be reaching that host at all, the denial is working as intended.
+
+*Recovery:* `fix_input` · *Reachable:* yes
 
 ### `runtime.internal`
 
