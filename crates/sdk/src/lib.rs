@@ -113,7 +113,7 @@ pub mod error;
 pub mod http;
 pub mod secrets_api;
 
-pub use caller::{Caller, Role, caller, groups, in_group, role};
+pub use caller::{Caller, caller};
 pub use error::Error;
 pub use http::{Method, Request, Response};
 pub use secrets_api::secret;

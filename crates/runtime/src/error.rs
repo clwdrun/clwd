@@ -148,6 +148,17 @@ define_error! {
         #[error("capability denied: {detail}")]
         CapabilityDenied { detail: String } => "runtime.capability_denied";
 
+        /// The component imports a first-party interface at a version this
+        /// runtime does not provide: almost always an app built against an
+        /// older `clwd-sdk`. Refused at spawn, before the guest runs, so the
+        /// author gets the interface's name rather than a trap halfway through
+        /// a request.
+        #[error(
+            "the component imports {import}, which this runtime does not provide; \
+             rebuild it against the current clwd-sdk"
+        )]
+        IncompatibleInterface { import: String } => "runtime.incompatible_interface";
+
         /// Last resort only, never where a specific variant fits. A boxed
         /// opaque source in a library error type is tolerable as a genuine
         /// fallback and corrosive as a default.
@@ -211,6 +222,9 @@ mod tests {
                 limit: "memory",
                 requested: 2,
                 allowed: 1,
+            },
+            Error::IncompatibleInterface {
+                import: "clwd:identity/context@0.1.0".into(),
             },
             Error::Internal {
                 source: "boom".into(),

@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use clwd_bundle::{BundleRef, Capabilities, Limits, Runtime, build};
-use clwd_runtime::identity::{Caller, GroupId, IdentityCtx, OrgId, Principal, Role, SubjectId};
+use clwd_runtime::identity::{Caller, IdentityCtx, OrgId, Principal, SubjectId};
 use clwd_runtime::wasm::{
     AppId, DigestAsAppId, MemoryAppDataStore, MemoryBundleStore, MemorySecretStore, WasmSandbox,
 };
@@ -15,6 +15,9 @@ use clwd_runtime::{Body, Request};
 /// A real component built from `wit/world.wit`. Rebuild with
 /// `just rebuild-guest`.
 pub const GUEST: &[u8] = include_bytes!("../fixtures/app.wasm");
+/// The same guest built against `clwd:identity@0.1.0`, before roles and groups
+/// were removed. Kept to prove an old app is refused with a clear error.
+pub const GUEST_IDENTITY_0_1: &[u8] = include_bytes!("../fixtures/app-identity-0.1.wasm");
 /// Valid WebAssembly, but a core module rather than a component.
 pub const CORE_MODULE: &[u8] = include_bytes!("../fixtures/core-module.wasm");
 
@@ -142,13 +145,6 @@ pub fn user(subject: &str) -> IdentityCtx {
         SubjectId::new(subject),
         OrgId::new("acme"),
     )))
-}
-
-pub fn user_with(subject: &str, role: Role, groups: &[&str]) -> IdentityCtx {
-    let mut ctx = user(subject);
-    ctx.role = Some(role);
-    ctx.groups = groups.iter().map(|g| GroupId::new(*g)).collect();
-    ctx
 }
 
 pub fn get(path: &str) -> Request {

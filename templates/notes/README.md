@@ -44,11 +44,25 @@ clwd run app.clwd --path /note
 - Any atomic read-modify-write. There is none, and this app does not pretend
   otherwise.
 
-## Local versus deployed — `platform#11`
+## Who is calling
 
 `caller()` returns a verified caller. This app never sees a token or a session,
-and there is no authentication code in it. That is true today.
+and there is no authentication code in it. What each field guarantees, when
+the app is deployed:
 
-**The value is not real yet.** Locally the caller is always subject `local` in
-org `local`. Real subject ids arrive with `platform#11`. The code below does not
-change when they do — only what it receives.
+- **`subject`** — opaque and stable forever for this person in this app, across
+  every deploy. It is different in every other app, so never compare or share
+  subjects between apps. It is a lowercase UUID, which fits the storage key
+  grammar, so `data::for_caller` accepts it.
+- **`email`** — a verified address. It is an `Option`: handle `None`, which a
+  service caller can produce.
+- **`org`** — the organisation that owns this app.
+- **`display_name`** — `None` for now.
+
+There are no roles and no groups. An answer that is always "none" is one an app
+builds authorization on, and that authorization fails open, so the interface
+does not offer one. For an authorization question, `authorize` returns
+`unavailable` until a policy engine answers it: treat that as "no".
+
+Locally the caller is always subject `local` in org `local`. The code below does
+not change when it is deployed, only what it receives.

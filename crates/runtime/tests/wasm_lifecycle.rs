@@ -34,6 +34,30 @@ async fn a_full_round_trip_serves_a_response() {
     assert_eq!(text(&response), "ok");
 }
 
+/// Agents pattern-match old templates, so an app built against the previous
+/// identity interface will be deployed. It must fail at spawn with an error
+/// that names the interface and its version, not trap mid-request.
+#[tokio::test]
+async fn a_component_built_against_identity_0_1_is_refused_at_spawn() {
+    let (digest, bytes) = bundle_of(GUEST_IDENTITY_0_1);
+    let bundles = MemoryBundleStore::new();
+    bundles.insert(&digest, bytes);
+    let sandbox = WasmSandbox::new(Arc::new(bundles)).expect("engine builds");
+
+    let err = sandbox
+        .spawn(digest, user("alice"), SpawnOptions::default())
+        .await
+        .expect_err("a 0.1.0 component must not spawn");
+    assert_eq!(err.code(), "runtime.incompatible_interface", "{err}");
+    let message = err.to_string();
+    assert!(
+        message.contains("clwd:identity/") && message.contains("@0.1.0"),
+        "the error must name the interface and its version: {message}"
+    );
+    assert!(message.contains("clwd-sdk"), "{message}");
+    assert_eq!(sandbox.live_instances(), 0);
+}
+
 /// A host with persistent stores installs `AppIdRequired`, so a spawn that
 /// forgets to name its app fails instead of falling back to a digest.
 #[tokio::test]

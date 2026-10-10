@@ -42,8 +42,8 @@ clwd run app.clwd --path /
   processed. This one does not, and that is a gap you must close.
 - Outbound requests. `egress` is empty; add a host to `clwd.toml` to make one.
 
-## Local versus deployed — `platform#11`
+## Local versus deployed
 
-This app does not read identity, so nothing here changes when `platform#11`
-lands. The secret it reads is real locally: `clwd secrets set` stores it, and
+This app does not read identity, so nothing here changes between a local run
+and a deployed one. The secret it reads is real locally: `clwd secrets set` stores it, and
 `clwd run` injects it exactly as the platform will.

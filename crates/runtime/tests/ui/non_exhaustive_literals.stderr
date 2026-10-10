@@ -1,61 +1,63 @@
 error[E0639]: cannot create non-exhaustive struct using struct expression
   --> tests/ui/non_exhaustive_literals.rs:10:13
    |
-10 |     let _ = SpawnOptions { deadline: None };
-   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-error[E0639]: cannot create non-exhaustive struct using struct expression
-  --> tests/ui/non_exhaustive_literals.rs:11:13
-   |
-11 |       let _ = InvokeOptions {
+10 |       let _ = SpawnOptions {
    |  _____________^
-12 | |         deadline: None,
-13 | |         request_id: None,
-14 | |     };
+11 | |         deadline: None,
+12 | |         app: None,
+13 | |     };
    | |_____^
 
 error[E0639]: cannot create non-exhaustive struct using struct expression
-  --> tests/ui/non_exhaustive_literals.rs:15:13
+  --> tests/ui/non_exhaustive_literals.rs:14:13
    |
-15 |       let _ = IdentityCtx {
+14 |       let _ = InvokeOptions {
    |  _____________^
-16 | |         caller: Caller::Anonymous,
-17 | |         role: None,
-18 | |         groups: Vec::new(),
-19 | |     };
+15 | |         deadline: None,
+16 | |         request_id: None,
+17 | |     };
    | |_____^
 
 error[E0639]: cannot create non-exhaustive struct using struct expression
-  --> tests/ui/non_exhaustive_literals.rs:20:13
+  --> tests/ui/non_exhaustive_literals.rs:18:13
    |
-20 |       let _ = Principal {
+18 |       let _ = IdentityCtx {
    |  _____________^
-21 | |         subject: SubjectId::new("s"),
-22 | |         org: OrgId::new("o"),
-23 | |         display_name: None,
-24 | |         email: None,
-25 | |     };
+19 | |         caller: Caller::Anonymous,
+20 | |     };
    | |_____^
 
 error[E0639]: cannot create non-exhaustive struct using struct expression
-  --> tests/ui/non_exhaustive_literals.rs:26:13
+  --> tests/ui/non_exhaustive_literals.rs:21:13
    |
-26 |       let _ = ServicePrincipal {
+21 |       let _ = Principal {
    |  _____________^
-27 | |         subject: SubjectId::new("s"),
-28 | |         org: OrgId::new("o"),
-29 | |         on_behalf_of: None,
-30 | |     };
+22 | |         subject: SubjectId::new("s"),
+23 | |         org: OrgId::new("o"),
+24 | |         display_name: None,
+25 | |         email: None,
+26 | |     };
    | |_____^
 
 error[E0639]: cannot create non-exhaustive struct using struct expression
-  --> tests/ui/non_exhaustive_literals.rs:31:13
+  --> tests/ui/non_exhaustive_literals.rs:27:13
    |
-31 |       let _ = LogLine {
+27 |       let _ = ServicePrincipal {
    |  _____________^
-32 | |         timestamp: std::time::SystemTime::now(),
-33 | |         level: LogLevel::Info,
-34 | |         message: String::new(),
-35 | |         request_id: None,
-36 | |     };
+28 | |         subject: SubjectId::new("s"),
+29 | |         org: OrgId::new("o"),
+30 | |         on_behalf_of: None,
+31 | |     };
+   | |_____^
+
+error[E0639]: cannot create non-exhaustive struct using struct expression
+  --> tests/ui/non_exhaustive_literals.rs:32:13
+   |
+32 |       let _ = LogLine {
+   |  _____________^
+33 | |         timestamp: std::time::SystemTime::now(),
+34 | |         level: LogLevel::Info,
+35 | |         message: String::new(),
+36 | |         request_id: None,
+37 | |     };
    | |_____^

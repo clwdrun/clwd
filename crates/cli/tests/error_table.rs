@@ -286,6 +286,16 @@ const TABLE: &[Row] = &[
         action: Recovery::Rebuild,
     },
     Row {
+        code: "runtime.incompatible_interface",
+        meaning: "The app was built against a version of a clwd interface this runtime no \
+                  longer provides — usually an app written from an older template or SDK. \
+                  It is refused before it runs. The message names the interface and its \
+                  version.",
+        recovery: "Update the app's `clwd-sdk` to the current version, fix what no longer \
+                   compiles, and rebuild with `clwd build`.",
+        action: Recovery::Rebuild,
+    },
+    Row {
         code: "runtime.capability_denied",
         meaning: "The app tried to use something its manifest does not grant: an outbound \
                   request to a host not in `capabilities.egress`, or persistent storage \

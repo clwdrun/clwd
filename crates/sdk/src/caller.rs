@@ -23,7 +23,6 @@
 //! runs on the same reasoning: a distinct value rather than an absent one.
 
 use alloc::string::String;
-use alloc::vec::Vec;
 
 use crate::clwd::identity::types as wit;
 
@@ -88,18 +87,6 @@ pub enum Caller {
     Service(Service),
 }
 
-/// What this caller may do in the current organisation.
-///
-/// Not `#[non_exhaustive]`, for the same reason as [`Caller`]: a new role is a
-/// permission level every app has to place relative to the ones it knows, and a
-/// wildcard arm would place it silently.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Role {
-    Viewer,
-    Editor,
-    Owner,
-}
-
 /// Who is calling.
 ///
 /// ```ignore
@@ -125,32 +112,6 @@ pub fn caller() -> Caller {
             on_behalf_of: s.on_behalf_of,
         }),
     }
-}
-
-/// This caller's role, if they have one.
-///
-/// `None` means no role in this organisation — which is not the same as
-/// [`Role::Viewer`], and an app that treats it as read access has granted
-/// something nobody assigned.
-#[must_use]
-pub fn role() -> Option<Role> {
-    crate::clwd::identity::context::get_role().map(|r| match r {
-        wit::Role::Viewer => Role::Viewer,
-        wit::Role::Editor => Role::Editor,
-        wit::Role::Owner => Role::Owner,
-    })
-}
-
-/// Whether this caller belongs to `group`.
-#[must_use]
-pub fn in_group(group: &str) -> bool {
-    crate::clwd::identity::context::in_group(group)
-}
-
-/// Every group this caller belongs to.
-#[must_use]
-pub fn groups() -> Vec<String> {
-    crate::clwd::identity::context::list_groups()
 }
 
 impl Caller {

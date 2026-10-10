@@ -7,15 +7,16 @@ use clwd_runtime::identity::{Caller, IdentityCtx, OrgId, Principal, ServicePrinc
 use clwd_runtime::logs::{LogLevel, LogLine};
 
 fn main() {
-    let _ = SpawnOptions { deadline: None };
+    let _ = SpawnOptions {
+        deadline: None,
+        app: None,
+    };
     let _ = InvokeOptions {
         deadline: None,
         request_id: None,
     };
     let _ = IdentityCtx {
         caller: Caller::Anonymous,
-        role: None,
-        groups: Vec::new(),
     };
     let _ = Principal {
         subject: SubjectId::new("s"),

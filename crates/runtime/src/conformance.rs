@@ -248,7 +248,8 @@ pub const REQUIREMENTS: &[Requirement] = &[
     Requirement {
         id: "R1.7",
         group: "caller_isolation",
-        summary: "the caller's role and groups come from the spawning identity",
+        summary: "authorize and authorize-many fail closed with unavailable while no \
+                  policy engine answers them",
     },
     Requirement {
         id: "R1.8",

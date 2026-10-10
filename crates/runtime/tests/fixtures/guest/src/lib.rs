@@ -15,7 +15,7 @@
 // writing and identity go through the SDK, because there the SDK is what an app
 // would use. A fixture that used the ergonomic layer everywhere would prove
 // less, not more.
-use clwd_sdk::raw::{app_data, secrets, wasi};
+use clwd_sdk::raw::{app_data, identity, secrets, wasi};
 use clwd_sdk::{Caller, Request, Response, caller};
 
 /// Mutated by `/counter`. Whether this survives between requests is exactly
@@ -30,6 +30,22 @@ fn describe(e: app_data::store::Error) -> String {
         app_data::store::Error::InvalidKey(why) => format!("invalid-key:{why}"),
         app_data::store::Error::ValueTooLarge(limit) => format!("value-too-large:{limit}"),
         app_data::store::Error::Unavailable => "unavailable".into(),
+    }
+}
+
+/// Render an authorization answer so a test can tell allowed, denied and each
+/// error apart.
+fn describe_authz(
+    result: Result<Vec<identity::types::Decision>, identity::types::AuthzError>,
+) -> String {
+    match result {
+        Ok(decisions) => decisions
+            .iter()
+            .map(|d| if d.allowed { "allowed" } else { "denied" })
+            .collect::<Vec<_>>()
+            .join(","),
+        Err(identity::types::AuthzError::Unavailable) => "unavailable".into(),
+        Err(identity::types::AuthzError::Malformed(why)) => format!("malformed:{why}"),
     }
 }
 
@@ -64,14 +80,27 @@ impl clwd_sdk::exports::wasi::http::incoming_handler::Guest for Component {
                 n.to_string()
             }
 
-            "/role" => match clwd_sdk::role() {
-                Some(clwd_sdk::Role::Viewer) => "viewer".into(),
-                Some(clwd_sdk::Role::Editor) => "editor".into(),
-                Some(clwd_sdk::Role::Owner) => "owner".into(),
-                None => "none".into(),
-            },
+            // What the host answers an authorization question with. Until a
+            // policy engine exists the only safe answer is a refusal, and the
+            // conformance suite asserts that is what a guest gets.
+            "/authorize" => describe_authz(identity::context::authorize(
+                "read",
+                &identity::types::EntityRef {
+                    kind: "Note".into(),
+                    id: "1".into(),
+                },
+            )
+            .map(|d| vec![d])),
 
-            "/groups" => clwd_sdk::groups().join(","),
+            "/authorize-many" => describe_authz(identity::context::authorize_many(&[
+                identity::types::AuthzRequest {
+                    action: "read".into(),
+                    target: identity::types::EntityRef {
+                        kind: "Note".into(),
+                        id: "1".into(),
+                    },
+                },
+            ])),
 
             "/log" => {
                 println!("hello from stdout");

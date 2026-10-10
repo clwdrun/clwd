@@ -14,7 +14,7 @@ use wasmtime::component::ResourceTable;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 
-use crate::identity::{Caller, IdentityCtx, Role};
+use crate::identity::{Caller, IdentityCtx};
 use crate::logs::LogStreamKind;
 use crate::wasm::budget::Budget;
 use crate::wasm::capability::{EgressHooks, EgressPolicy, StoragePolicy};
@@ -28,7 +28,7 @@ wasmtime::component::bindgen!({
     inline: "
         package clwd:host@0.1.0;
         world data-host {
-            import clwd:identity/context@0.1.0;
+            import clwd:identity/context@0.2.0;
             import clwd:secrets/broker@0.1.0;
             import clwd:app-data/store@0.1.0;
         }
@@ -138,26 +138,6 @@ impl clwd::identity::context::Host for StoreState {
                 on_behalf_of: s.on_behalf_of.as_ref().map(|s| s.as_str().to_owned()),
             }),
         }
-    }
-
-    fn get_role(&mut self) -> Option<wit::Role> {
-        self.identity.role.map(|role| match role {
-            Role::Viewer => wit::Role::Viewer,
-            Role::Editor => wit::Role::Editor,
-            Role::Owner => wit::Role::Owner,
-        })
-    }
-
-    fn in_group(&mut self, group: String) -> bool {
-        self.identity.groups.iter().any(|g| g.as_str() == group)
-    }
-
-    fn list_groups(&mut self) -> Vec<String> {
-        self.identity
-            .groups
-            .iter()
-            .map(|g| g.as_str().to_owned())
-            .collect()
     }
 
     /// Authorization is a control-plane call and belongs to a later issue.

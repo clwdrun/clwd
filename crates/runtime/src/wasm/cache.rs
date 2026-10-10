@@ -22,6 +22,17 @@ use crate::wasm::host::StoreState;
 /// itself, so it is cached rather than repeated per request.
 pub(super) type Prepared = ProxyPre<StoreState>;
 
+/// The first-party interfaces the linker provides, at the versions it provides
+/// them. Keep in step with the `bindgen!` world in `host.rs`: a version there
+/// that is missing here refuses every current app, which the fixture tests
+/// catch at once.
+const FIRST_PARTY: &[&str] = &[
+    "clwd:identity/types@0.2.0",
+    "clwd:identity/context@0.2.0",
+    "clwd:secrets/broker@0.1.0",
+    "clwd:app-data/store@0.1.0",
+];
+
 /// Default budget: enough for a working set of small components without
 /// letting a busy host accumulate compiled code without bound.
 const DEFAULT_BUDGET_BYTES: usize = 256 * 1024 * 1024;
@@ -182,6 +193,19 @@ impl ComponentCache {
                         .map_err(|e| Error::Internal {
                             source: format!("compiling component: {e}").into(),
                         })?;
+                // Before linking, so an old app gets an error that names the
+                // interface rather than the linker's "no matching
+                // implementation", or worse, a trap mid-request.
+                if let Some(import) = component
+                    .component_type()
+                    .imports(linker.engine())
+                    .map(|(name, _)| name)
+                    .find(|name| name.starts_with("clwd:") && !FIRST_PARTY.contains(name))
+                {
+                    return Err(Error::IncompatibleInterface {
+                        import: import.to_owned(),
+                    });
+                }
                 let size = component.serialize().map(|b| b.len()).unwrap_or(0);
                 let pre = linker
                     .instantiate_pre(&component)

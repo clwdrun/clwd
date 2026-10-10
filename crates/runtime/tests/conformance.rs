@@ -23,7 +23,7 @@ use clwd_runtime::conformance::{
     BackendUnderTest, FixtureKind, InstanceObservation, REQUIREMENTS, WorldSpec, requirement,
 };
 use clwd_runtime::handle::InstanceId;
-use clwd_runtime::identity::{Caller, GroupId, IdentityCtx, OrgId, Principal, Role, SubjectId};
+use clwd_runtime::identity::{Caller, IdentityCtx, OrgId, Principal, SubjectId};
 use clwd_runtime::{
     AppId, Body, BundleRef, Deadline, Error, InvokeOptions, LogLine, LogStream, Request, RequestId,
     Sandbox, SpawnOptions,
@@ -100,13 +100,6 @@ fn user(subject: &str) -> IdentityCtx {
         SubjectId::new(subject),
         OrgId::new("acme"),
     )))
-}
-
-fn user_with(subject: &str, role: Role, groups: &[&str]) -> IdentityCtx {
-    let mut ctx = user(subject);
-    ctx.role = Some(role);
-    ctx.groups = groups.iter().map(|g| GroupId::new(*g)).collect();
-    ctx
 }
 
 // --- request / response helpers -----------------------------------------
@@ -425,23 +418,22 @@ async fn r1_7() {
         }
         let sb: Arc<dyn Sandbox> = arm.sandbox(&WorldSpec::defaults()).await.into();
         let h = sb
-            .spawn(
-                guest(&*arm),
-                user_with("dave", Role::Editor, &["eng", "oncall"]),
-                SpawnOptions::default(),
-            )
+            .spawn(guest(&*arm), user("dave"), SpawnOptions::default())
             .await
             .expect("spawns");
+        // A host with no policy engine must refuse, not allow: an app that
+        // treats an error as "no" fails closed only if the host never says
+        // "yes" by default.
         assert_eq!(
-            call(&sb, &h, "/role", &at(&*arm, ID)).await,
-            "editor",
-            "{}role did not come from the spawning identity",
+            call(&sb, &h, "/authorize", &at(&*arm, ID)).await,
+            "unavailable",
+            "{}authorize must fail closed",
             at(&*arm, ID)
         );
         assert_eq!(
-            call(&sb, &h, "/groups", &at(&*arm, ID)).await,
-            "eng,oncall",
-            "{}groups did not come from the spawning identity",
+            call(&sb, &h, "/authorize-many", &at(&*arm, ID)).await,
+            "unavailable",
+            "{}authorize-many must fail closed, for the whole batch",
             at(&*arm, ID)
         );
     }
@@ -467,12 +459,6 @@ async fn r1_8() {
             call(&sb, &h, "/whoami", &at(&*arm, ID)).await,
             "anonymous",
             "{}an anonymous caller must arrive as anonymous",
-            at(&*arm, ID)
-        );
-        assert_eq!(
-            call(&sb, &h, "/role", &at(&*arm, ID)).await,
-            "none",
-            "{}anonymous has no role",
             at(&*arm, ID)
         );
     }
