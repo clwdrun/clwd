@@ -35,6 +35,10 @@ struct Buffer {
     lines: Vec<String>,
     /// Trailing bytes with no newline yet.
     partial: Vec<u8>,
+    /// Bytes held in `lines` and `partial`, kept as a running count. Summing
+    /// the lines on every write is quadratic in the line count, and a guest
+    /// writing one byte per line chooses that count.
+    used: usize,
     dropped: u64,
 }
 
@@ -68,6 +72,7 @@ impl LogSink {
             buffer.partial.clear();
             out.push(self.line(text, request));
         }
+        buffer.used = 0;
         if buffer.dropped > 0 {
             let dropped = std::mem::take(&mut buffer.dropped);
             out.push(self.line(
@@ -108,13 +113,17 @@ impl StdoutStream for LogSink {
 impl OutputStream for LogSink {
     fn write(&mut self, bytes: Bytes) -> Result<(), StreamError> {
         let mut buffer = self.buffer.lock();
-        let used: usize =
-            buffer.partial.len() + buffer.lines.iter().map(String::len).sum::<usize>();
-        if used + bytes.len() > SINK_CAPACITY {
+        // Once anything is dropped, everything after it is too. Guests write a
+        // line's text and its newline separately, so a sink that took the small
+        // writes after a large one was refused would turn each refused line
+        // into an empty one, and enough of those push the drop marker past a
+        // subscriber's buffer.
+        if buffer.dropped > 0 || buffer.used + bytes.len() > SINK_CAPACITY {
             // Drop rather than trap. See the module comment.
             buffer.dropped += bytes.len() as u64;
             return Ok(());
         }
+        buffer.used += bytes.len();
         for byte in bytes.iter().copied() {
             if byte == b'\n' {
                 let text = String::from_utf8_lossy(&buffer.partial).into_owned();
@@ -214,5 +223,57 @@ impl futures_core::Stream for LogSubscription {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.rx.poll_recv(cx).map(|line| line.map(Ok))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The cap is per sink, so per stream per invocation: a guest that writes
+    /// past it keeps at most `SINK_CAPACITY` bytes, loses the rest, and leaves
+    /// one line saying how much. Written the way a guest's `println!` arrives:
+    /// the text, then its newline as a separate write.
+    #[test]
+    fn output_past_the_cap_is_dropped_and_counted_once() {
+        let mut sink = LogSink::new(LogStreamKind::Stdout);
+        let text = Bytes::from(vec![b'x'; 4096]);
+        for _ in 0..300 {
+            OutputStream::write(&mut sink, text.clone()).expect("never fails");
+            OutputStream::write(&mut sink, Bytes::from_static(b"\n")).expect("never fails");
+        }
+
+        let lines = sink.drain(None);
+        assert!(
+            lines.iter().all(|l| !l.message.is_empty()),
+            "a refused line must not come back as an empty one"
+        );
+        assert!(
+            lines.len() <= SINK_CAPACITY / 4096 + 1,
+            "{} lines",
+            lines.len()
+        );
+        let kept: usize = lines.iter().map(|l| l.message.len() + 1).sum::<usize>();
+        let markers: Vec<_> = lines
+            .iter()
+            .filter(|l| l.message.starts_with("[clwd]"))
+            .collect();
+        assert_eq!(markers.len(), 1, "exactly one drop marker");
+        let written = 300 * 4097;
+        let kept_text = (lines.len() - 1) * 4097;
+        assert!(
+            markers[0]
+                .message
+                .contains(&format!("{} bytes of output dropped", written - kept_text)),
+            "{}",
+            markers[0].message
+        );
+        assert!(kept <= SINK_CAPACITY + markers[0].message.len() + 1);
+
+        // Draining resets the count, so the next invocation starts empty.
+        OutputStream::write(&mut sink, Bytes::from_static(b"next\n")).expect("never fails");
+        let next = sink.drain(None);
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0].message, "next");
     }
 }
