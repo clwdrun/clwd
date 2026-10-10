@@ -92,6 +92,13 @@ impl clwd_sdk::exports::wasi::http::incoming_handler::Guest for Component {
                 "flooded".into()
             }
 
+            // /big-response/N — a response body of N bytes, to reach the
+            // host's response cap.
+            p if p.starts_with("/big-response/") => {
+                let n: usize = p["/big-response/".len()..].parse().unwrap_or(0);
+                "x".repeat(n)
+            }
+
             // A trap, so the host's trap mapping has something to map.
             "/trap" => panic!("guest panicked on purpose"),
 

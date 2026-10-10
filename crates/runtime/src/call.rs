@@ -50,6 +50,14 @@ pub type Request = http::Request<Body>;
 /// The HTTP response an app produced.
 pub type Response = http::Response<Body>;
 
+/// The largest response body a guest may return, in bytes: 16 MiB.
+///
+/// Responses are buffered, so without a cap a guest decides how much host
+/// memory one request takes. A body past this fails the invocation with
+/// `runtime.resource_exhausted` rather than being truncated: a cut-off body
+/// served as complete is worse than an error.
+pub const MAX_RESPONSE_BODY: usize = 16 * 1024 * 1024;
+
 /// A point in time after which work should be abandoned.
 ///
 /// **Absolute, not relative.** A relative budget silently renews itself at every

@@ -10,7 +10,8 @@ use std::time::Duration;
 
 use clwd_runtime::wasm::{MemoryBundleStore, WasmSandbox};
 use clwd_runtime::{
-    Deadline, Error, InvokeOptions, LogStreamKind, Phase, RequestId, Sandbox, SpawnOptions,
+    Deadline, Error, InvokeOptions, LogStreamKind, MAX_RESPONSE_BODY, Phase, RequestId, Sandbox,
+    SpawnOptions,
 };
 use futures_core::Stream;
 
@@ -29,6 +30,55 @@ async fn a_full_round_trip_serves_a_response() {
 
     assert_eq!(response.status(), 200);
     assert_eq!(text(&response), "ok");
+}
+
+/// Responses are buffered, so the cap is what keeps a guest from choosing how
+/// much host memory a request takes. At the cap is served; one byte over fails.
+#[tokio::test]
+async fn a_response_body_past_the_cap_is_refused() {
+    let (sandbox, digest) = sandbox();
+    let handle = sandbox
+        .spawn(digest, user("alice"), SpawnOptions::default())
+        .await
+        .expect("spawns");
+
+    // Past wasi-http's 1 MiB body buffer, so this also covers reading the body
+    // while the guest writes it. Read after `handle` returns instead, and the
+    // guest blocks on a full channel: the deadline turns that hang into a
+    // failure.
+    let mut opts = InvokeOptions::default();
+    opts.deadline = Some(Deadline::after(Duration::from_secs(20)));
+    let at_cap = sandbox
+        .invoke(
+            &handle,
+            get(&format!("/big-response/{MAX_RESPONSE_BODY}")),
+            opts,
+        )
+        .await
+        .expect("a body at the cap is served");
+    assert_eq!(at_cap.body().len(), MAX_RESPONSE_BODY);
+
+    // Not `expect_err`: on failure it would print the 16 MiB body.
+    let Err(err) = sandbox
+        .invoke(
+            &handle,
+            get(&format!("/big-response/{}", MAX_RESPONSE_BODY + 1)),
+            InvokeOptions::default(),
+        )
+        .await
+    else {
+        panic!("a body past the cap was served");
+    };
+    assert!(
+        matches!(
+            err,
+            Error::ResourceExhausted {
+                limit: "response body",
+                ..
+            }
+        ),
+        "{err:?}"
+    );
 }
 
 /// A host that spawns and stops once per request must end where it started.

@@ -15,7 +15,9 @@ pub mod test_util;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 
-pub use call::{Body, Deadline, InvokeOptions, Request, RequestId, Response, SpawnOptions};
+pub use call::{
+    Body, Deadline, InvokeOptions, MAX_RESPONSE_BODY, Request, RequestId, Response, SpawnOptions,
+};
 pub use error::{Error, Phase, Result};
 pub use handle::{Handle, InstanceId};
 pub use identity::{
