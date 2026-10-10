@@ -1,0 +1,29 @@
+name: advisories
+
+# `ci` checks advisories only when something is pushed. An advisory published
+# against a dependency we already lock arrives with no push, so on a quiet week
+# the gate never looks: a critical wasmtime sandbox escape sat against our lock
+# for eight days with the check correct and simply not running. This runs the
+# same check against `main` every day, so a new advisory fails a run within a
+# day instead of on the next unrelated pull request.
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: install cargo-deny
+        uses: taiki-e/install-action@742a3317eac7bd62f91cd888b4eead5e784ba833 # v2.87.1
+        with:
+          tool: cargo-deny@0.20.2
+
+      - name: advisories
+        run: cargo deny check --hide-inclusion-graph advisories
