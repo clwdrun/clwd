@@ -87,9 +87,29 @@ unicode-normalization = "0.1"
 wit-bindgen = "0.60.0"
 
 # clwd-runtime (wasm backend)
-wasmtime = "48.0.1"
-wasmtime-wasi = "48.0.1"
-wasmtime-wasi-http = "48.0.1"
+#
+# Default features off, with explicit lists. Every wasmtime feature compiled in
+# is a class of advisory that can reach a guest: the defaults include
+# `component-model-async`, which turns the async component model on at runtime
+# and was the path for GHSA-32h6-97mm-8q3c (a guest-controlled native stack
+# overflow). Nothing here uses async components, GC, threads, the pooling
+# allocator, WASIp1 or WASIp3, so none of them are built. Adding a feature back
+# is a security decision: say which advisory classes it reopens.
+wasmtime = { version = "48.0.5", default-features = false, features = [
+  "runtime",
+  "std",
+  "cranelift",
+  "parallel-compilation",
+  "component-model",
+  "async",
+  "backtrace",
+  "addr2line",
+] }
+wasmtime-wasi = { version = "48.0.5", default-features = false, features = ["p2"] }
+wasmtime-wasi-http = { version = "48.0.5", default-features = false, features = [
+  "p2",
+  "default-send-request",
+] }
 
 # clwd-runtime (microvm backend) — no maintained firecracker-rs wrapper,
 # so we drive the Firecracker API socket directly.
