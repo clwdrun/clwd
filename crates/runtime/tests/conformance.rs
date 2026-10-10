@@ -23,9 +23,9 @@ use clwd_runtime::conformance::{
     BackendUnderTest, FixtureKind, InstanceObservation, REQUIREMENTS, WorldSpec, requirement,
 };
 use clwd_runtime::handle::InstanceId;
-use clwd_runtime::identity::{Caller, GroupId, IdentityCtx, OrgId, Principal, Role, SubjectId};
+use clwd_runtime::identity::{Caller, IdentityCtx, OrgId, Principal, SubjectId};
 use clwd_runtime::{
-    Body, BundleRef, Deadline, Error, InvokeOptions, LogLine, LogStream, Request, RequestId,
+    AppId, Body, BundleRef, Deadline, Error, InvokeOptions, LogLine, LogStream, Request, RequestId,
     Sandbox, SpawnOptions,
 };
 
@@ -102,13 +102,6 @@ fn user(subject: &str) -> IdentityCtx {
     )))
 }
 
-fn user_with(subject: &str, role: Role, groups: &[&str]) -> IdentityCtx {
-    let mut ctx = user(subject);
-    ctx.role = Some(role);
-    ctx.groups = groups.iter().map(|g| GroupId::new(*g)).collect();
-    ctx
-}
-
 // --- request / response helpers -----------------------------------------
 
 fn get(path: &str) -> Request {
@@ -176,7 +169,7 @@ const COVERED: &[&str] = &[
     "R3.1", "R3.2", "R3.3", //
     "R4.1", "R4.2", "R4.3", "R4.4", "R4.5", "R4.6", //
     "R5.1", "R5.2", "R5.3", //
-    "R6.1", "R6.2", "R6.3", "R6.4", "R6.5", "R6.6", //
+    "R6.1", "R6.2", "R6.3", "R6.4", "R6.5", "R6.6", "R6.7", //
     "R7.1", "R7.2",
 ];
 
@@ -425,23 +418,22 @@ async fn r1_7() {
         }
         let sb: Arc<dyn Sandbox> = arm.sandbox(&WorldSpec::defaults()).await.into();
         let h = sb
-            .spawn(
-                guest(&*arm),
-                user_with("dave", Role::Editor, &["eng", "oncall"]),
-                SpawnOptions::default(),
-            )
+            .spawn(guest(&*arm), user("dave"), SpawnOptions::default())
             .await
             .expect("spawns");
+        // A host with no policy engine must refuse, not allow: an app that
+        // treats an error as "no" fails closed only if the host never says
+        // "yes" by default.
         assert_eq!(
-            call(&sb, &h, "/role", &at(&*arm, ID)).await,
-            "editor",
-            "{}role did not come from the spawning identity",
+            call(&sb, &h, "/authorize", &at(&*arm, ID)).await,
+            "unavailable",
+            "{}authorize must fail closed",
             at(&*arm, ID)
         );
         assert_eq!(
-            call(&sb, &h, "/groups", &at(&*arm, ID)).await,
-            "eng,oncall",
-            "{}groups did not come from the spawning identity",
+            call(&sb, &h, "/authorize-many", &at(&*arm, ID)).await,
+            "unavailable",
+            "{}authorize-many must fail closed, for the whole batch",
             at(&*arm, ID)
         );
     }
@@ -467,12 +459,6 @@ async fn r1_8() {
             call(&sb, &h, "/whoami", &at(&*arm, ID)).await,
             "anonymous",
             "{}an anonymous caller must arrive as anonymous",
-            at(&*arm, ID)
-        );
-        assert_eq!(
-            call(&sb, &h, "/role", &at(&*arm, ID)).await,
-            "none",
-            "{}anonymous has no role",
             at(&*arm, ID)
         );
     }
@@ -1253,6 +1239,47 @@ async fn r6_4() {
             call(&sb, &hb, "/data/get/k", &c).await,
             "absent",
             "{c}a key set in one app is visible in another sharing the store"
+        );
+    }
+}
+
+/// Apps built from one template share a digest, so the digest cannot name the
+/// app. If a backend namespaced data by the artifact rather than by the app
+/// the host named, the second app would read the first one's data.
+#[tokio::test]
+async fn r6_7() {
+    const ID: &str = "R6.7";
+    for arm in arms() {
+        if skipped(&*arm, ID) {
+            continue;
+        }
+        let sb: Arc<dyn Sandbox> = arm.sandbox(&WorldSpec::defaults()).await.into();
+        let artifact = guest(&*arm);
+        let as_app = |name: &str| {
+            let mut opts = SpawnOptions::default();
+            opts.app = Some(AppId::new(name));
+            opts
+        };
+        let ha = sb
+            .spawn(artifact, user("alice"), as_app("app-a"))
+            .await
+            .expect("spawns as app a");
+        let hb = sb
+            .spawn(artifact, user("alice"), as_app("app-b"))
+            .await
+            .expect("spawns as app b");
+        let c = at(&*arm, ID);
+        assert_eq!(call(&sb, &ha, "/data/set/k/in-a", &c).await, "stored");
+        assert_eq!(
+            call(&sb, &hb, "/data/get/k", &c).await,
+            "absent",
+            "{c}app b read app a's data: the namespace followed the artifact, not the app"
+        );
+        assert_eq!(call(&sb, &hb, "/data/set/k/in-b", &c).await, "stored");
+        assert_eq!(
+            call(&sb, &ha, "/data/get/k", &c).await,
+            "in-a",
+            "{c}app b's write reached app a's namespace"
         );
     }
 }

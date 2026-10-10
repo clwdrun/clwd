@@ -15,12 +15,13 @@ pub mod test_util;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 
-pub use call::{Body, Deadline, InvokeOptions, Request, RequestId, Response, SpawnOptions};
+pub use call::{
+    AppId, Body, Deadline, InvokeOptions, MAX_RESPONSE_BODY, Request, RequestId, Response,
+    SpawnOptions,
+};
 pub use error::{Error, Phase, Result};
 pub use handle::{Handle, InstanceId};
-pub use identity::{
-    Caller, GroupId, IdentityCtx, OrgId, Principal, Role, ServicePrincipal, SubjectId,
-};
+pub use identity::{Caller, IdentityCtx, OrgId, Principal, ServicePrincipal, SubjectId};
 pub use logs::{LogLevel, LogLine, LogStream, LogStreamKind};
 
 /// `BundleRef` is defined by `clwd-bundle` and re-exported, never redefined.

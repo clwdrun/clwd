@@ -248,7 +248,8 @@ pub const REQUIREMENTS: &[Requirement] = &[
     Requirement {
         id: "R1.7",
         group: "caller_isolation",
-        summary: "the caller's role and groups come from the spawning identity",
+        summary: "authorize and authorize-many fail closed with unavailable while no \
+                  policy engine answers them",
     },
     Requirement {
         id: "R1.8",
@@ -388,6 +389,12 @@ pub const REQUIREMENTS: &[Requirement] = &[
         group: "app_data",
         summary: "a 1 MiB value is accepted; a value over the host's own limit is refused with \
                   value-too-large carrying a limit of at least 1 MiB",
+    },
+    Requirement {
+        id: "R6.7",
+        group: "app_data",
+        summary: "one artifact spawned as two apps, named by the host in SpawnOptions::app, \
+                  has a separate namespace per app",
     },
     // --- logs --------------------------------------------------
     Requirement {

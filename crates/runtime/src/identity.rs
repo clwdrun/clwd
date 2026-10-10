@@ -5,8 +5,7 @@
 //! this module: two sources of truth for one app's permissions is the
 //! silent-permission failure the bundle format exists to prevent.
 //!
-//! The split is: anything that varies per **caller** is a [`Role`] and lives
-//! here; anything that varies per **app** is a capability and lives in the
+//! The split is: anything that varies per **caller** lives here; anything that varies per **app** is a capability and lives in the
 //! manifest.
 
 use std::fmt;
@@ -18,10 +17,6 @@ pub struct SubjectId(String);
 /// The organization a subject belongs to.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct OrgId(String);
-
-/// A group within an organization.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct GroupId(String);
 
 macro_rules! opaque_id {
     ($($ty:ident),* $(,)?) => {$(
@@ -40,7 +35,7 @@ macro_rules! opaque_id {
         }
     )*};
 }
-opaque_id!(SubjectId, OrgId, GroupId);
+opaque_id!(SubjectId, OrgId);
 
 /// A human caller.
 ///
@@ -123,16 +118,6 @@ pub enum Caller {
     Service(ServicePrincipal),
 }
 
-/// The caller's role on this app, resolved from share grants.
-///
-/// Not `#[non_exhaustive]`, for the same reason as [`Caller`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Role {
-    Viewer,
-    Editor,
-    Owner,
-}
-
 /// Everything a backend is told about the caller an instance serves.
 ///
 /// Consumed by `Sandbox::spawn`, and never seen again: `invoke` takes no
@@ -142,29 +127,25 @@ pub enum Role {
 #[non_exhaustive]
 pub struct IdentityCtx {
     pub caller: Caller,
-    /// `None` for anonymous callers, matching `get-role` in the WIT.
-    pub role: Option<Role>,
-    pub groups: Vec<GroupId>,
 }
 
 impl IdentityCtx {
-    /// A context for `caller` with no role and no groups.
+    /// A context for `caller`.
     ///
     /// This type is `#[non_exhaustive]`, so it cannot be built with a struct
     /// literal outside this crate — including with `..Default::default()`.
-    /// Build it here and assign the fields you need:
+    /// Build it here:
     ///
     /// ```
     /// # use clwd_runtime::identity::*;
-    /// let mut ctx = IdentityCtx::new(Caller::Anonymous);
-    /// ctx.groups.push(GroupId::new("everyone"));
+    /// let ctx = IdentityCtx::new(Caller::Anonymous);
     /// ```
+    ///
+    /// There is no role and no group field. A field that is always empty is
+    /// one an app builds authorization on, and that authorization fails open;
+    /// see DECISION 3 in the identity WIT.
     pub fn new(caller: Caller) -> Self {
-        Self {
-            caller,
-            role: None,
-            groups: Vec::new(),
-        }
+        Self { caller }
     }
 
     /// The subject this context identifies, or `None` when anonymous.

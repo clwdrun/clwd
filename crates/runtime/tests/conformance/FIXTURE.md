@@ -38,8 +38,9 @@ the response is `200` with the body given verbatim (no trailing newline).
 | --- | --- | --- |
 | `/` | Liveness. Do nothing else. | `ok` |
 | `/whoami` | Return the calling subject id. An anonymous caller returns the literal `anonymous`. | subject id, or `anonymous` |
-| `/role` | Return the caller's role on this app, or `none` when there is no role. | `viewer` / `editor` / `owner` / `none` |
-| `/groups` | Return the caller's group ids, comma-joined, in the order the host reports them. Empty when the caller is in no groups. | e.g. `eng,oncall`, or `` |
+| `/authorize` | Call `clwd:identity` `authorize("read", Note "1")`. Render the decision as `allowed` / `denied`, or the error as `unavailable` / `malformed:{why}`. | `unavailable` on a host with no policy engine |
+| `/authorize-many` | Call `authorize-many` with that one request, rendered the same way, decisions comma-joined. | `unavailable` on a host with no policy engine |
+| `/big-response/{n}` | Return a response body of `{n}` bytes. Used to reach the host's response-body cap. | `{n}` bytes |
 | `/log` | Write exactly one line to stdout whose text contains `stdout`, and exactly one line to stderr whose text contains `stderr`. | `logged` |
 | `/flood-logs` | Write more than 1 MiB to stdout in a single invocation, as a few hundred multi-KiB lines. Forces the host's log buffer past its capacity. | `flooded` |
 | `/trap` | Crash the guest hard: `panic!`, `unreachable`, `abort` — whatever terminates the current invocation abnormally. There is no response. | — (the invocation fails) |
@@ -71,8 +72,10 @@ on which one occurred, with this exact shape:
 The guest calls three first-party interfaces. Their contracts are in `wit/`; the
 points that matter for the fixture:
 
-- **`clwd:identity`** — ambient (`get-caller()` takes no argument). `/whoami`,
-  `/role`, `/groups` read it directly. The guest never constructs an identity.
+- **`clwd:identity`** — ambient (`get-caller()` takes no argument). `/whoami`
+  reads it directly. The guest never constructs an identity. `/authorize` and
+  `/authorize-many` ask the host a question; with no policy engine the only
+  conforming answer is `unavailable`.
 - **`clwd:secrets`** — `broker.get(name)` returns `option<list<u8>>` and cannot
   fail. `none` covers both "no such secret" and "not granted to this app"; the
   guest must render both as `absent` and must not branch on the difference.

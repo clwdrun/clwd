@@ -12,7 +12,7 @@ use wasmtime_wasi_http::WasiHttpView;
 use wasmtime_wasi_http::p2::bindings::http::types::Scheme;
 use wasmtime_wasi_http::p2::body::HyperIncomingBody;
 
-use crate::call::{Body, Request, RequestId, Response};
+use crate::call::{Body, MAX_RESPONSE_BODY, Request, RequestId, Response};
 use crate::error::{Error, Phase, Result};
 use crate::identity::IdentityCtx;
 use crate::wasm::budget::Budget;
@@ -137,10 +137,60 @@ pub(super) async fn run(
             source: format!("building response outparam: {e}").into(),
         })?;
 
+    // The guest's `handle` and the read of its response run together, not one
+    // after the other. The body crosses a bounded channel (wasi-http buffers one
+    // 1 MiB chunk), so a guest writing more than that blocks until the host
+    // reads; awaiting `handle` first waits on a write that is waiting on us, and
+    // every response over about 2 MiB hangs until the deadline.
+    let read = tokio::spawn(async move {
+        let response = rx
+            .await
+            .map_err(|_| Error::Internal {
+                source: "guest produced no response".into(),
+            })?
+            .map_err(|e| Error::Internal {
+                source: format!("guest response error: {e}").into(),
+            })?;
+
+        let (parts, body) = response.into_parts();
+        // One aggregation. A single-frame body passes through without a copy;
+        // a multi-frame body is concatenated once. `Limited` stops reading at
+        // the cap, so a guest never gets more host memory than that, and
+        // dropping the body on the way out fails the guest's next write.
+        let collected = http_body_util::Limited::new(body, MAX_RESPONSE_BODY)
+            .collect()
+            .await
+            .map_err(|e| {
+                if e.is::<http_body_util::LengthLimitError>() {
+                    Error::ResourceExhausted {
+                        limit: "response body",
+                        // At least this much: reading stops at the first byte
+                        // over.
+                        requested: MAX_RESPONSE_BODY as u64 + 1,
+                        allowed: MAX_RESPONSE_BODY as u64,
+                    }
+                } else {
+                    Error::Internal {
+                        source: format!("reading response body: {e}").into(),
+                    }
+                }
+            })?
+            .to_bytes();
+        Ok::<_, Error>(Response::from_parts(parts, Body::from(collected)))
+    });
     let call = proxy
         .wasi_http_incoming_handler()
         .call_handle(&mut store, incoming, outparam)
         .await;
+    // The response outparam and the body writer live in the store's table. A
+    // guest that trapped, or returned without responding, leaves them there,
+    // and the read would wait on them forever; dropping the store closes them.
+    drop(store);
+    let read = read.await.unwrap_or_else(|e| {
+        Err(Error::Internal {
+            source: format!("response read task: {e}").into(),
+        })
+    });
 
     // Publish whatever the guest wrote, whether or not it succeeded — a
     // trapping guest's last lines are the ones worth having.
@@ -148,29 +198,13 @@ pub(super) async fn run(
     lines.extend(stderr.drain(request_id.as_ref()));
     logs.publish(lines);
 
-    call.map_err(|e| classify(e, Phase::Invoke, &budget, "guest"))?;
-
-    let response = rx
-        .await
-        .map_err(|_| Error::Internal {
-            source: "guest produced no response".into(),
-        })?
-        .map_err(|e| Error::Internal {
-            source: format!("guest response error: {e}").into(),
-        })?;
-
-    let (parts, body) = response.into_parts();
-    // One aggregation. A single-frame body passes through without a copy; a
-    // multi-frame body is concatenated once.
-    let collected = body
-        .collect()
-        .await
-        .map_err(|e| Error::Internal {
-            source: format!("reading response body: {e}").into(),
-        })?
-        .to_bytes();
-
-    Ok(Response::from_parts(parts, Body::from(collected)))
+    match (call, read) {
+        // The cap is the cause even when the guest then fails on its closed
+        // body stream, so it wins over whatever the guest did next.
+        (_, Err(e @ Error::ResourceExhausted { .. })) => Err(e),
+        (Err(e), _) => Err(classify(e, Phase::Invoke, &budget, "guest")),
+        (Ok(()), read) => read,
+    }
 }
 
 /// Turn a failure out of wasm into the right error.

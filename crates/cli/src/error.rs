@@ -296,7 +296,7 @@ impl CliError {
             // `clwd_bundle::Error::retryable` exists and is `false` for its whole
             // catalogue — a malformed bundle does not become well formed on a
             // second attempt. `clwd_runtime::Error` exposes no `retryable()` at
-            // all, so there is nothing to forward for the six `runtime.*` codes.
+            // all, so there is nothing to forward for the `runtime.*` codes.
             //
             // `false` rather than a guess. `runtime.deadline_exceeded` is
             // arguably retryable, but the crate that owns the code declined to

@@ -50,6 +50,14 @@ pub type Request = http::Request<Body>;
 /// The HTTP response an app produced.
 pub type Response = http::Response<Body>;
 
+/// The largest response body a guest may return, in bytes: 16 MiB.
+///
+/// Responses are buffered, so without a cap a guest decides how much host
+/// memory one request takes. A body past this fails the invocation with
+/// `runtime.resource_exhausted` rather than being truncated: a cut-off body
+/// served as complete is worse than an error.
+pub const MAX_RESPONSE_BODY: usize = 16 * 1024 * 1024;
+
 /// A point in time after which work should be abandoned.
 ///
 /// **Absolute, not relative.** A relative budget silently renews itself at every
@@ -111,7 +119,7 @@ impl Deadline {
 ///
 /// ```compile_fail
 /// # use clwd_runtime::call::SpawnOptions;
-/// let opts = SpawnOptions { deadline: None };
+/// let opts = SpawnOptions { deadline: None, app: None };
 /// ```
 ///
 /// Functional update syntax is rejected too, which is why the pattern above is
@@ -126,6 +134,36 @@ impl Deadline {
 pub struct SpawnOptions {
     /// Cold-start budget. `None` means the backend's own default applies.
     pub deadline: Option<Deadline>,
+    /// The application this artifact runs as, which namespaces its data and
+    /// secrets. Supplied by the host, because the artifact cannot say: apps
+    /// built from one template share a digest. `None` falls back to the
+    /// backend's resolver.
+    pub app: Option<AppId>,
+}
+
+/// A stable identity for an application, across every version of it.
+///
+/// **Not a [`BundleRef`].** A `BundleRef` is a digest over one artifact, so
+/// every deploy produces a different one. An app's data must survive its
+/// deploys, which means the namespace it lives in cannot be derived from the
+/// thing that changes on every deploy.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct AppId(String);
+
+impl AppId {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for AppId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
 /// Per-invocation options. See [`SpawnOptions`] for the construction pattern.

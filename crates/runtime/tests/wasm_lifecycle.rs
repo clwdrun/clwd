@@ -8,9 +8,12 @@ use wasm_common::*;
 use std::sync::Arc;
 use std::time::Duration;
 
-use clwd_runtime::wasm::{MemoryBundleStore, WasmSandbox};
+use clwd_runtime::wasm::{
+    AppIdRequired, MemoryAppDataStore, MemoryBundleStore, MemorySecretStore, WasmSandbox,
+};
 use clwd_runtime::{
-    Deadline, Error, InvokeOptions, LogStreamKind, Phase, RequestId, Sandbox, SpawnOptions,
+    AppId, Deadline, Error, InvokeOptions, LogStreamKind, MAX_RESPONSE_BODY, Phase, RequestId,
+    Sandbox, SpawnOptions,
 };
 use futures_core::Stream;
 
@@ -29,6 +32,130 @@ async fn a_full_round_trip_serves_a_response() {
 
     assert_eq!(response.status(), 200);
     assert_eq!(text(&response), "ok");
+}
+
+/// Agents pattern-match old templates, so an app built against the previous
+/// identity interface will be deployed. It must fail at spawn with an error
+/// that names the interface and its version, not trap mid-request.
+#[tokio::test]
+async fn a_component_built_against_identity_0_1_is_refused_at_spawn() {
+    let (digest, bytes) = bundle_of(GUEST_IDENTITY_0_1);
+    let bundles = MemoryBundleStore::new();
+    bundles.insert(&digest, bytes);
+    let sandbox = WasmSandbox::new(Arc::new(bundles)).expect("engine builds");
+
+    let err = sandbox
+        .spawn(digest, user("alice"), SpawnOptions::default())
+        .await
+        .expect_err("a 0.1.0 component must not spawn");
+    assert_eq!(err.code(), "runtime.incompatible_interface", "{err}");
+    let message = err.to_string();
+    assert!(
+        message.contains("clwd:identity/") && message.contains("@0.1.0"),
+        "the error must name the interface and its version: {message}"
+    );
+    assert!(message.contains("clwd-sdk"), "{message}");
+    assert_eq!(sandbox.live_instances(), 0);
+}
+
+/// A host with persistent stores installs `AppIdRequired`, so a spawn that
+/// forgets to name its app fails instead of falling back to a digest.
+#[tokio::test]
+async fn app_id_required_refuses_a_spawn_that_names_no_app() {
+    let (digest, bytes) = bundle_of(GUEST);
+    let bundles = MemoryBundleStore::new();
+    bundles.insert(&digest, bytes);
+    let sandbox = WasmSandbox::with_stores(
+        Arc::new(bundles),
+        Arc::new(MemorySecretStore::new()),
+        Arc::new(MemoryAppDataStore::new()),
+        Arc::new(AppIdRequired),
+    )
+    .expect("engine builds");
+
+    let err = sandbox
+        .spawn(digest, user("alice"), SpawnOptions::default())
+        .await
+        .expect_err("a spawn with no app must fail");
+    assert!(err.to_string().contains("named no app"), "{err}");
+    assert_eq!(sandbox.live_instances(), 0);
+
+    let mut opts = SpawnOptions::default();
+    opts.app = Some(AppId::new("app-a"));
+    sandbox
+        .spawn(digest, user("alice"), opts)
+        .await
+        .expect("a spawn that names its app runs");
+}
+
+/// Responses are buffered, so the cap is what keeps a guest from choosing how
+/// much host memory a request takes. At the cap is served; one byte over fails.
+#[tokio::test]
+async fn a_response_body_past_the_cap_is_refused() {
+    let (sandbox, digest) = sandbox();
+    let handle = sandbox
+        .spawn(digest, user("alice"), SpawnOptions::default())
+        .await
+        .expect("spawns");
+
+    // Past wasi-http's 1 MiB body buffer, so this also covers reading the body
+    // while the guest writes it. Read after `handle` returns instead, and the
+    // guest blocks on a full channel: the deadline turns that hang into a
+    // failure.
+    let mut opts = InvokeOptions::default();
+    opts.deadline = Some(Deadline::after(Duration::from_secs(20)));
+    let at_cap = sandbox
+        .invoke(
+            &handle,
+            get(&format!("/big-response/{MAX_RESPONSE_BODY}")),
+            opts,
+        )
+        .await
+        .expect("a body at the cap is served");
+    assert_eq!(at_cap.body().len(), MAX_RESPONSE_BODY);
+
+    // Not `expect_err`: on failure it would print the 16 MiB body.
+    let Err(err) = sandbox
+        .invoke(
+            &handle,
+            get(&format!("/big-response/{}", MAX_RESPONSE_BODY + 1)),
+            InvokeOptions::default(),
+        )
+        .await
+    else {
+        panic!("a body past the cap was served");
+    };
+    assert!(
+        matches!(
+            err,
+            Error::ResourceExhausted {
+                limit: "response body",
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+}
+
+/// A host that spawns and stops once per request must end where it started.
+/// Each entry holds a copy of its app's secrets, so a `stop` that only marks
+/// the entry grows memory, and the secrets in it, with every request served.
+#[tokio::test]
+async fn stop_removes_the_instance() {
+    let (sandbox, digest) = sandbox();
+    for subject in ["alice", "bob", "carol"] {
+        let handle = sandbox
+            .spawn(digest, user(subject), SpawnOptions::default())
+            .await
+            .expect("spawns");
+        sandbox
+            .invoke(&handle, get("/"), InvokeOptions::default())
+            .await
+            .expect("invokes");
+        assert_eq!(sandbox.live_instances(), 1);
+        sandbox.stop(handle).await.expect("stops");
+    }
+    assert_eq!(sandbox.live_instances(), 0, "stop left instances behind");
 }
 
 /// **This test pins the promise made by per-invocation instantiation.**

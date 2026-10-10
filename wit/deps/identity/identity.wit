@@ -1,4 +1,4 @@
-package clwd:identity@0.1.0;
+package clwd:identity@0.2.0;
 
 // ---------------------------------------------------------------------------
 // DECISION 1 — ambient `get-caller()` vs a threaded request-context resource.
@@ -48,12 +48,6 @@ interface types {
     /// Opaque, stable, org-unique. Not an email: emails get renamed and reused.
     type subject-id = string;
     type org-id = string;
-    type group-id = string;
-
-    record group {
-        id: group-id,
-        name: option<string>,
-    }
 
     record principal {
         subject: subject-id,
@@ -75,13 +69,6 @@ interface types {
         anonymous,
         user(principal),
         service(service-principal),
-    }
-
-    /// Resolved from share grants on this app.
-    enum role {
-        viewer,
-        editor,
-        owner,
     }
 
     /// Maps 1:1 onto a Cedar entity UID (`Type::"id"`).
@@ -111,7 +98,7 @@ interface types {
 }
 
 interface context {
-    use types.{caller, role, group-id, entity-ref, authz-request, decision, authz-error};
+    use types.{caller, entity-ref, authz-request, decision, authz-error};
 
     /// Who is calling, for the request currently being handled.
     ///
@@ -119,14 +106,20 @@ interface context {
     /// instance-reuse invariant it places on clwd-runtime.
     get-caller: func() -> caller;
 
-    /// The caller's role on this app. None for anonymous.
-    get-role: func() -> option<role>;
-
-    /// Membership test without materializing every group. Prefer this.
-    in-group: func(group: group-id) -> bool;
-
-    /// Full group list. Can be large in big orgs — use `in-group` where you can.
-    list-groups: func() -> list<group-id>;
+    // -----------------------------------------------------------------------
+    // DECISION 3 (0.2.0) — no roles and no groups until something fills them.
+    //
+    // 0.1.0 had `get-role`, `in-group` and `list-groups`. No host populates
+    // roles or groups yet, so every caller had no role and no groups, and an
+    // app's check failed OPEN: `!in-group("banned")` is true for everyone, and
+    // `role != viewer` holds for a caller with no role at all. They are
+    // removed rather than kept empty, because an always-empty answer is one an
+    // app author will build authorization on.
+    //
+    // They come back, additively, in a minor version once a host can answer
+    // them truthfully. Until then the authorization question goes through
+    // `authorize`, which fails closed.
+    // -----------------------------------------------------------------------
 
     /// Delegate an authorization question to Cedar in the control plane,
     /// for resources the app owns and the platform can't see.
@@ -138,7 +131,7 @@ interface context {
     // -----------------------------------------------------------------------
     // DECISION 2 — does `authorize` need batching now?
     //
-    // Chosen: YES, ship `authorize-many` in 0.1.0.
+    // Chosen: YES, ship `authorize-many` (since 0.1.0).
     //
     // The motivating case is ordinary, not exotic: a list view over 500 rows
     // filtered by permission. With only the scalar form that is 500 host

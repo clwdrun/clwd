@@ -59,6 +59,7 @@ retryable, a per-code mapping would be a second compatibility surface for no gai
 | [`runtime.stopped`](#runtimestopped) | `retry` | yes |
 | [`runtime.resource_exhausted`](#runtimeresource_exhausted) | `fix_input` | yes |
 | [`runtime.trap`](#runtimetrap) | `rebuild` | yes |
+| [`runtime.incompatible_interface`](#runtimeincompatible_interface) | `rebuild` | yes |
 | [`runtime.capability_denied`](#runtimecapability_denied) | `fix_input` | yes |
 | [`runtime.internal`](#runtimeinternal) | `report_bug` | yes |
 | [`bundle.not_tar`](#bundlenot_tar) | `rebuild` | yes |
@@ -221,6 +222,14 @@ The app asked for more of a resource — memory, most often — than its manifes
 The app itself failed — it panicked, hit an assertion, or executed something invalid. This is a bug in the app being run, not in clwd.
 
 **What to do:** The message carries the app's own failure text and a backtrace. Fix the app, rebuild with `clwd build`, and run it again.
+
+*Recovery:* `rebuild` · *Reachable:* yes
+
+### `runtime.incompatible_interface`
+
+The app was built against a version of a clwd interface this runtime no longer provides — usually an app written from an older template or SDK. It is refused before it runs. The message names the interface and its version.
+
+**What to do:** Update the app's `clwd-sdk` to the current version, fix what no longer compiles, and rebuild with `clwd build`.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
