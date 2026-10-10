@@ -17,32 +17,17 @@ use clwd_bundle::BundleRef;
 
 use crate::error::Result;
 
-/// A stable identity for an application, across every version of it.
+pub use crate::call::AppId;
+
+/// Maps an artifact to the application it is a version of, for a spawn whose
+/// host did not say.
 ///
-/// **Not a [`BundleRef`].** A `BundleRef` is a digest over one artifact, so
-/// every deploy produces a different one. An app's data must survive its
-/// deploys, which means the namespace it lives in cannot be derived from the
-/// thing that changes on every deploy.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct AppId(String);
-
-impl AppId {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for AppId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-/// Maps an artifact to the application it is a version of.
+/// **Consulted only when [`crate::SpawnOptions::app`] is `None`.** A digest
+/// does not name an app: every app built from one template has the same
+/// digest, so a digest-to-app lookup is ambiguous and a store namespaced by its
+/// answer lets one app read another's data. A host that knows which app it is
+/// running passes it per spawn; a host with persistent stores installs
+/// [`AppIdRequired`] so that forgetting to is an error rather than a fallback.
 ///
 /// This exists as its own trait, rather than the data store simply taking a
 /// `BundleRef`, so that using a digest as an app identity is a **deliberate
@@ -75,7 +60,7 @@ pub trait AppIdResolver: Send + Sync {
 /// unrecoverably once the old artifact is collected.
 ///
 /// Local development and tests never redeploy into the same process, so nothing
-/// is lost there. Anything durable needs a real mapping; that is `platform#21`.
+/// is lost there. Anything durable names the app per spawn instead.
 #[derive(Debug, Default)]
 pub struct DigestAsAppId;
 
@@ -83,6 +68,23 @@ pub struct DigestAsAppId;
 impl AppIdResolver for DigestAsAppId {
     async fn resolve(&self, bundle: &BundleRef) -> Result<AppId> {
         Ok(AppId::new(bundle.to_string()))
+    }
+}
+
+/// Refuses every spawn that did not name its app.
+///
+/// The resolver for a host whose stores outlive the process. There is no
+/// digest-derived answer to fall back to, so a missing
+/// [`crate::SpawnOptions::app`] fails the spawn before the guest runs.
+#[derive(Debug, Default)]
+pub struct AppIdRequired;
+
+#[async_trait]
+impl AppIdResolver for AppIdRequired {
+    async fn resolve(&self, bundle: &BundleRef) -> Result<AppId> {
+        Err(crate::error::Error::Internal {
+            source: format!("spawn of {bundle} named no app; set SpawnOptions::app").into(),
+        })
     }
 }
 

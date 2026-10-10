@@ -68,8 +68,8 @@ use budget::Budget;
 use cache::ComponentCache;
 use capability::{EgressPolicy, StoragePolicy};
 pub use data::{
-    AppDataStore, AppId, AppIdResolver, DigestAsAppId, MemoryAppDataStore, MemorySecretStore,
-    SecretStore,
+    AppDataStore, AppId, AppIdRequired, AppIdResolver, DigestAsAppId, MemoryAppDataStore,
+    MemorySecretStore, SecretStore,
 };
 use logs::InstanceLogs;
 
@@ -302,7 +302,10 @@ impl Sandbox for WasmSandbox {
         // Resolve identity and secrets before the instance exists. A failure
         // here means it never starts, which is what makes `secrets.get`
         // infallible at call time.
-        let app = self.apps.resolve(&bundle).await?;
+        let app = match opts.app {
+            Some(app) => app,
+            None => self.apps.resolve(&bundle).await?,
+        };
         let secrets: HashMap<String, Vec<u8>> = self
             .secrets
             .resolve(&app, &declared_secrets)

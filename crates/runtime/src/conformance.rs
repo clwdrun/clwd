@@ -389,6 +389,12 @@ pub const REQUIREMENTS: &[Requirement] = &[
         summary: "a 1 MiB value is accepted; a value over the host's own limit is refused with \
                   value-too-large carrying a limit of at least 1 MiB",
     },
+    Requirement {
+        id: "R6.7",
+        group: "app_data",
+        summary: "one artifact spawned as two apps, named by the host in SpawnOptions::app, \
+                  has a separate namespace per app",
+    },
     // --- logs --------------------------------------------------
     Requirement {
         id: "R7.1",

@@ -8,10 +8,12 @@ use wasm_common::*;
 use std::sync::Arc;
 use std::time::Duration;
 
-use clwd_runtime::wasm::{MemoryBundleStore, WasmSandbox};
+use clwd_runtime::wasm::{
+    AppIdRequired, MemoryAppDataStore, MemoryBundleStore, MemorySecretStore, WasmSandbox,
+};
 use clwd_runtime::{
-    Deadline, Error, InvokeOptions, LogStreamKind, MAX_RESPONSE_BODY, Phase, RequestId, Sandbox,
-    SpawnOptions,
+    AppId, Deadline, Error, InvokeOptions, LogStreamKind, MAX_RESPONSE_BODY, Phase, RequestId,
+    Sandbox, SpawnOptions,
 };
 use futures_core::Stream;
 
@@ -30,6 +32,36 @@ async fn a_full_round_trip_serves_a_response() {
 
     assert_eq!(response.status(), 200);
     assert_eq!(text(&response), "ok");
+}
+
+/// A host with persistent stores installs `AppIdRequired`, so a spawn that
+/// forgets to name its app fails instead of falling back to a digest.
+#[tokio::test]
+async fn app_id_required_refuses_a_spawn_that_names_no_app() {
+    let (digest, bytes) = bundle_of(GUEST);
+    let bundles = MemoryBundleStore::new();
+    bundles.insert(&digest, bytes);
+    let sandbox = WasmSandbox::with_stores(
+        Arc::new(bundles),
+        Arc::new(MemorySecretStore::new()),
+        Arc::new(MemoryAppDataStore::new()),
+        Arc::new(AppIdRequired),
+    )
+    .expect("engine builds");
+
+    let err = sandbox
+        .spawn(digest, user("alice"), SpawnOptions::default())
+        .await
+        .expect_err("a spawn with no app must fail");
+    assert!(err.to_string().contains("named no app"), "{err}");
+    assert_eq!(sandbox.live_instances(), 0);
+
+    let mut opts = SpawnOptions::default();
+    opts.app = Some(AppId::new("app-a"));
+    sandbox
+        .spawn(digest, user("alice"), opts)
+        .await
+        .expect("a spawn that names its app runs");
 }
 
 /// Responses are buffered, so the cap is what keeps a guest from choosing how
