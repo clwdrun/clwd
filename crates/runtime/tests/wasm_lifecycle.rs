@@ -31,6 +31,27 @@ async fn a_full_round_trip_serves_a_response() {
     assert_eq!(text(&response), "ok");
 }
 
+/// A host that spawns and stops once per request must end where it started.
+/// Each entry holds a copy of its app's secrets, so a `stop` that only marks
+/// the entry grows memory, and the secrets in it, with every request served.
+#[tokio::test]
+async fn stop_removes_the_instance() {
+    let (sandbox, digest) = sandbox();
+    for subject in ["alice", "bob", "carol"] {
+        let handle = sandbox
+            .spawn(digest, user(subject), SpawnOptions::default())
+            .await
+            .expect("spawns");
+        sandbox
+            .invoke(&handle, get("/"), InvokeOptions::default())
+            .await
+            .expect("invokes");
+        assert_eq!(sandbox.live_instances(), 1);
+        sandbox.stop(handle).await.expect("stops");
+    }
+    assert_eq!(sandbox.live_instances(), 0, "stop left instances behind");
+}
+
 /// **This test pins the promise made by per-invocation instantiation.**
 ///
 /// The module documents that nothing a guest writes survives into its next

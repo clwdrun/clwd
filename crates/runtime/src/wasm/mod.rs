@@ -130,7 +130,6 @@ struct Instance {
     /// The storage-namespace allowlist, precomputed once at spawn. Deny-by-default.
     storage: StoragePolicy,
     logs: Arc<InstanceLogs>,
-    stopped: bool,
 }
 
 /// The wasmtime backend.
@@ -212,9 +211,15 @@ impl WasmSandbox {
     /// is unreachable there and not part of the public surface.
     #[cfg(feature = "conformance")]
     pub async fn evict(&self, id: &InstanceId) {
-        if let Some(instance) = self.instances.lock().get_mut(id) {
-            instance.stopped = true;
-        }
+        self.instances.lock().remove(id);
+    }
+
+    /// Instances spawned and not yet stopped. Every spawn holds a copy of its
+    /// app's secrets, so a host that spawns per request leaks both unless
+    /// `stop` removes the entry; tests assert this count rather than the
+    /// absence of a crash.
+    pub fn live_instances(&self) -> usize {
+        self.instances.lock().len()
     }
 
     /// Resolve a digest to the bytes of the component to run.
@@ -320,7 +325,6 @@ impl Sandbox for WasmSandbox {
                 egress,
                 storage,
                 logs: Arc::new(InstanceLogs::default()),
-                stopped: false,
             },
         );
         Ok(Handle::new(ctx, id))
@@ -329,10 +333,7 @@ impl Sandbox for WasmSandbox {
     async fn invoke(&self, handle: &Handle, req: Request, opts: InvokeOptions) -> Result<Response> {
         let (bundle, budget, app, secrets, egress, storage, logs) = {
             let instances = self.instances.lock();
-            let instance = instances
-                .get(handle.instance())
-                .filter(|i| !i.stopped)
-                .ok_or(Error::Stopped {})?;
+            let instance = instances.get(handle.instance()).ok_or(Error::Stopped {})?;
             (
                 instance.bundle,
                 instance.budget,
@@ -397,17 +398,14 @@ impl Sandbox for WasmSandbox {
 
     async fn logs_stream(&self, handle: &Handle) -> Result<LogStream> {
         let instances = self.instances.lock();
-        let instance = instances
-            .get(handle.instance())
-            .filter(|i| !i.stopped)
-            .ok_or(Error::Stopped {})?;
+        let instance = instances.get(handle.instance()).ok_or(Error::Stopped {})?;
         Ok(LogStream::new(instance.logs.subscribe()))
     }
 
     async fn stop(&self, handle: Handle) -> Result<()> {
-        if let Some(instance) = self.instances.lock().get_mut(handle.instance()) {
-            instance.stopped = true;
-        }
+        // Removed, not flagged: the entry holds the app's secrets, and a host
+        // that spawns per request would otherwise keep every one it ever ran.
+        self.instances.lock().remove(handle.instance());
         Ok(())
     }
 }
