@@ -29,9 +29,14 @@
 //!
 //! # Why the prose lives here and not beside each variant
 //!
+//! The one-sentence **hint** does live beside its variant: it is what the
+//! envelope carries, so it belongs to the code that raises the error, and this
+//! page renders it from each crate's `HINTS`. The longer `meaning` and
+//! `recovery` below are documentation only.
+//!
 //! "Documentation lives next to the thing it documents" is the usual instinct,
-//! and someone will want to move these 50 entries onto their `error.rs`
-//! variants. Resist it. Completeness is enforced either way — a variant with no
+//! and someone will want to move those entries onto their `error.rs`
+//! variants too. Resist it. Completeness is enforced either way — a variant with no
 //! row fails `table_covers_every_code_and_invents_none` — so the only thing at
 //! stake is whether the writing is any good. The 38 `bundle.*` entries are one
 //! narrative about one artifact: they share vocabulary, they build on each
@@ -48,8 +53,10 @@
 //! USTAR prefix fields — and `recovery` is an action with a command in it, not
 //! a description of the problem restated as advice.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+
+use clap::CommandFactory;
 
 /// What a caller should *do*, as a value rather than prose.
 ///
@@ -659,7 +666,10 @@ fn render() -> String {
          ```json\n\
          {\"code\":\"cli.not_found\",\"message\":\"…\",\"hint\":\"…\",\"retryable\":false}\n\
          ```\n\n\
-         `hint` is always present and may be `null`. One JSON object per line, never a\n\
+         `hint` is always present and may be `null`. Every code below has one; only an\n\
+         error relayed from a platform can arrive without it. A hint is one static\n\
+         sentence, written beside the code that raises the error, and never repeats\n\
+         error data — that is what `message` is for. One JSON object per line, never a\n\
          wrapping array — a `clwd logs --follow` that never ends has no closing bracket to\n\
          write.\n\n\
          ## Reading this table\n\n\
@@ -745,12 +755,15 @@ fn render() -> String {
             }
         };
         out.push_str(&format!("## {title}\n\n{blurb} {reach}\n\n"));
+        let hints = all_hints();
         for row in TABLE.iter().filter(|r| r.code.starts_with(prefix)) {
             out.push_str(&format!(
-                "### `{}`\n\n{}\n\n**What to do:** {}\n\n*Recovery:* `{}` · *Reachable:* {}\n\n",
+                "### `{}`\n\n{}\n\n**What to do:** {}\n\n**Hint** (in the envelope): {}\n\n\
+                 *Recovery:* `{}` · *Reachable:* {}\n\n",
                 row.code,
                 row.meaning,
                 row.recovery,
+                hints[row.code],
                 row.action.as_str(),
                 match Reach::of(row.code) {
                     Reach::Now => "yes".to_owned(),
@@ -767,7 +780,7 @@ fn render() -> String {
          The generated catalogue and its exhaustiveness test both come from the same macro\n\
          literal, so they move together and cannot catch a rename on their own. This file is\n\
          the external anchor that does not move. To change a code deliberately:\n\n\
-         1. Change the literal in the owning crate's `error.rs`.\n\
+         1. Change the literal, and its hint, in the owning crate's `error.rs`.\n\
          2. Update its row in `crates/cli/tests/error_table.rs`.\n\
          3. Run `just error-table` to regenerate this page.\n\
          4. Commit all three together — the diff is the record that it was deliberate.\n\n\
@@ -785,6 +798,131 @@ fn all_codes() -> BTreeSet<&'static str> {
         .chain(clwd_bundle::error::CODES)
         .copied()
         .collect()
+}
+
+/// Every code's hint, from the catalogue its crate generates beside `hint()`.
+fn all_hints() -> BTreeMap<&'static str, &'static str> {
+    clwd_cli::error::HINTS
+        .iter()
+        .chain(clwd_runtime::error::OWNED_HINTS)
+        .chain(clwd_bundle::error::HINTS)
+        .copied()
+        .collect()
+}
+
+/// Every key the manifest schema defines, from the table in §5.2 of the bundle
+/// spec. `members[].path` contributes `members` as well, so a hint may name the
+/// `[[members]]` table.
+fn manifest_keys() -> BTreeSet<String> {
+    let spec = include_str!("../../../docs/spec/bundle-v1.md");
+    let schema = spec
+        .split_once("### 5.2 Schema")
+        .and_then(|(_, rest)| rest.split_once("\n### "))
+        .expect("the spec has a §5.2 schema section")
+        .0;
+    let mut keys = BTreeSet::new();
+    for line in schema.lines() {
+        let Some(cell) = line.strip_prefix("| `") else {
+            continue;
+        };
+        let key = cell.split_once('`').expect("a closed key cell").0;
+        if let Some((table, _)) = key.split_once("[].") {
+            keys.insert(table.to_owned());
+        }
+        keys.insert(key.to_owned());
+    }
+    assert!(keys.len() > 10, "parsed too few schema keys: {keys:?}");
+    keys
+}
+
+/// What a hint names in backticks: a subcommand, or a manifest key.
+#[derive(Debug, PartialEq)]
+enum Named<'a> {
+    Command(&'a str),
+    Key(&'a str),
+}
+
+/// The subcommands and manifest keys a hint names. Placeholders such as
+/// `<command>`, file names, and values are not names and are skipped.
+fn names_in(hint: &str) -> Vec<Named<'_>> {
+    let mut names = Vec::new();
+    // Odd-indexed pieces are the text between backticks.
+    for span in hint.split('`').skip(1).step_by(2) {
+        if let Some(rest) = span.strip_prefix("clwd ") {
+            let sub = rest.split(' ').next().unwrap_or_default();
+            if !sub.starts_with('<') {
+                names.push(Named::Command(sub));
+            }
+            continue;
+        }
+        let (key, assigned) = match span.split_once(" = ") {
+            Some((key, _)) => (key, true),
+            None => (span.trim_start_matches('[').trim_end_matches(']'), false),
+        };
+        let table = span.starts_with('[');
+        let key_shaped = !key.is_empty()
+            && !key.starts_with('.')
+            && !key.ends_with(".toml")
+            && key
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c == '_' || c == '.');
+        if key_shaped && (assigned || table || key.contains('.')) {
+            names.push(Named::Key(key));
+        }
+    }
+    names
+}
+
+/// A hint that names a command or a key that does not exist sends its reader,
+/// often an agent with nothing else to go on, somewhere that is not there.
+/// Every `clwd <subcommand>` must be one clap accepts, and every manifest key
+/// must be one the schema defines.
+#[test]
+fn hints_name_only_real_commands_and_keys() {
+    let commands: BTreeSet<String> = clwd_cli::Cli::command()
+        .get_subcommands()
+        .map(|c| c.get_name().to_owned())
+        .collect();
+    let keys = manifest_keys();
+
+    let mut checked = 0;
+    for (code, hint) in all_hints() {
+        for name in names_in(hint) {
+            checked += 1;
+            match name {
+                Named::Command(sub) => assert!(
+                    commands.contains(sub),
+                    "{code}: the hint names `clwd {sub}`, which is not a subcommand; \
+                     the CLI has {commands:?}"
+                ),
+                Named::Key(key) => assert!(
+                    keys.contains(key),
+                    "{code}: the hint names `{key}`, which is not a manifest key; \
+                     §5.2 defines {keys:?}"
+                ),
+            }
+        }
+    }
+    // The parser finding nothing would pass vacuously.
+    assert!(checked > 40, "only {checked} names found across every hint");
+}
+
+/// The parser above, on the shapes it has to tell apart.
+#[test]
+fn names_in_finds_commands_and_keys_and_skips_the_rest() {
+    assert_eq!(
+        names_in(
+            "Set `runtime = \"wasm\"` and `capabilities.limits.cpu_ms` in `clwd.toml`, \
+             drop `[[members]]`, point at `.wasm` from `wasm32-wasip2`, run \
+             `clwd build` or `clwd <command> --help`."
+        ),
+        [
+            Named::Key("runtime"),
+            Named::Key("capabilities.limits.cpu_ms"),
+            Named::Key("members"),
+            Named::Command("build"),
+        ]
+    );
 }
 
 /// The recovery vocabulary is published, so its wire names must be distinct and

@@ -51,8 +51,8 @@
 ///
 /// **Attribute forwarding to the generated `match` arms is selective, and has to
 /// be.** `#[cfg]` must reach the arms: that is what lets the delegating section
-/// sit behind `#[cfg(feature = "run")]`, so the variant and its `code()`,
-/// `hint()` and `retryable()` arms appear and disappear together. Forwarding the
+/// sit behind `#[cfg(feature = "run")]`, so the variant and its `code()` and
+/// `hint()` arms, and the hand-written `retryable()` arm, appear and disappear together. Forwarding the
 /// arm attribute on the variant alone leaves arms naming a variant that does not
 /// exist, and the crate stops compiling with the feature off.
 ///
@@ -76,7 +76,7 @@ macro_rules! define_cli_error {
         owned {
             $(
                 $(#[$attr:meta])*
-                $variant:ident { $($field:tt)* } => $code:literal;
+                $variant:ident { $($field:tt)* } => $code:literal, $hint:literal;
             )*
         }
     ) => {
@@ -103,6 +103,33 @@ macro_rules! define_cli_error {
                     $( Self::$variant { .. } => $code, )*
                 }
             }
+
+            /// A short, actionable next step.
+            ///
+            /// Every variant has one. In the JSON envelope this field *is* the
+            /// recovery a caller sees, and a null hint is a dead end for exactly
+            /// the person least able to work out what to do next. A variant with
+            /// nothing useful to say here is usually a variant that is too broad
+            /// to be actionable at all.
+            ///
+            /// A delegating variant forwards its source's hint, as it forwards
+            /// its code: the crate that decides a failure says how to recover
+            /// from it. An owned variant's hint is a literal in the invocation
+            /// below, never a format string, so it cannot carry error data.
+            ///
+            /// The `Option` stays in the signature rather than becoming
+            /// `&'static str`: `hint` is `null`-able in the published envelope,
+            /// a platform error may arrive without one, and narrowing the type
+            /// here would make that shape unrepresentable.
+            pub fn hint(&self) -> Option<&str> {
+                match self {
+                    // `.into()` takes both shapes: `clwd_runtime::Error` and
+                    // `clwd_bundle::Error` return `&'static str`, while a
+                    // platform error's hint is already an `Option`.
+                    $( $(#[$dattr])* Self::$dvariant { source } => source.hint().into(), )*
+                    $( Self::$variant { .. } => Some($hint), )*
+                }
+            }
         }
 
         /// Every `cli.*` code, generated from the same input as the enum.
@@ -113,6 +140,11 @@ macro_rules! define_cli_error {
         /// that defines them and are catalogued there. This list is exactly what
         /// this crate is responsible for.
         pub const CODES: &[&str] = &[$($code),*];
+
+        /// Every `cli.*` and `net.*` code paired with its hint, generated from
+        /// the same input as [`CliError::hint`]. Public because the error-code
+        /// table is built from it.
+        pub const HINTS: &[(&str, &str)] = &[$(($code, $hint)),*];
     };
 }
 
@@ -136,19 +168,23 @@ define_cli_error! {
     owned {
     /// A value clap accepted on shape but a command rejected on meaning.
     #[error("invalid argument: {what}")]
-    InvalidArgument { what: String } => "cli.invalid_argument";
+    InvalidArgument { what: String } => "cli.invalid_argument",
+        "run `clwd <command> --help` for accepted values";
 
     /// A named thing — app, secret, bundle — that does not exist.
     #[error("not found: {what}")]
-    NotFound { what: String } => "cli.not_found";
+    NotFound { what: String } => "cli.not_found",
+        "check the name for typos, and run the matching `list` command to see what exists";
 
     /// The command exists in the dispatch table but has no body yet.
     #[error("`clwd {command}` is not implemented yet")]
-    NotImplemented { command: &'static str } => "cli.not_implemented";
+    NotImplemented { command: &'static str } => "cli.not_implemented",
+        "track progress at https://github.com/clwdrun/clwd/issues";
 
     /// Local configuration is missing, unreadable, or self-contradictory.
     #[error("configuration error: {what}")]
-    Config { what: String } => "cli.config";
+    Config { what: String } => "cli.config",
+        "check the config file the message names; delete it to start from defaults";
 
     /// The project's `clwd.toml` is malformed, contradictory, or grants
     /// something the format does not accept.
@@ -158,7 +194,8 @@ define_cli_error! {
     /// manifest discards the author's capability grants, and for the
     /// member-collision case it is not the fix at all.
     #[error("{what}")]
-    ManifestInvalid { what: String } => "cli.manifest_invalid";
+    ManifestInvalid { what: String } => "cli.manifest_invalid",
+        "check clwd.toml against the schema in docs/spec/bundle-v1.md §5";
 
     /// A tool the build needs is absent, or present and unrunnable.
     // The field is `cause`, not `source`: thiserror treats a field named
@@ -169,7 +206,10 @@ define_cli_error! {
         tool: &'static str,
         install: &'static str,
         cause: String,
-    } => "cli.toolchain_missing";
+    } => "cli.toolchain_missing",
+        // The install command is in the message rather than here: it differs
+        // per tool, and a hint is one static string per code.
+        "install the tool the message names, then run the command again";
 
     /// A build step ran and failed. The step names which one, so a failure
     /// deep in a subprocess does not read as a defect in clwd.
@@ -177,7 +217,8 @@ define_cli_error! {
     BuildFailed {
         step: &'static str,
         detail: String,
-    } => "cli.build_failed";
+    } => "cli.build_failed",
+        "Fix the first error in the build output above, then run `clwd build` again.";
 
     /// A network-layer failure with no HTTP response: connection refused, timed
     /// out, TLS handshake failed. The one publish failure the platform never
@@ -189,7 +230,8 @@ define_cli_error! {
     Net {
         detail: String,
         retryable: bool,
-    } => "net.unreachable";
+    } => "net.unreachable",
+        "check the platform URL and your network connection, then try again";
 
     /// Last resort only. Never returned where a specific variant fits: an
     /// `anyhow` source inside a library error type is tolerable as a genuine
@@ -198,7 +240,8 @@ define_cli_error! {
     Internal {
         #[source]
         source: anyhow::Error,
-    } => "cli.internal";
+    } => "cli.internal",
+        "Report this at https://github.com/clwdrun/clwd/issues with the command that produced it.";
     }
 }
 
@@ -213,77 +256,7 @@ impl From<clwd_bundle::Error> for CliError {
     }
 }
 
-/// What a delegated error offers instead of a hint of its own.
-///
-/// A real next step rather than a null, which #31 established is a dead end for
-/// the reader least able to work out what to do. It points at the table rather
-/// than restating it, so it cannot drift.
-///
-/// Path rather than URL while the repository is private; this becomes a docs
-/// URL when it goes public at MVP.
-///
-/// Ungated since #28. It was behind `run` when `Runtime` was the only variant
-/// using it; `Bundle` is unconditional, so with the feature off there is still
-/// something to delegate and the constant is still live.
-const DELEGATED_HINT: &str = "see docs/error-codes.md for this code's meaning and how to recover";
-
 impl CliError {
-    /// A short, actionable next step.
-    ///
-    /// Every variant has one. In the JSON envelope this field *is* the recovery
-    /// a caller sees, and a null hint is a dead end for exactly the person least
-    /// able to work out what to do next. A variant with nothing useful to say
-    /// here is usually a variant that is too broad to be actionable at all.
-    ///
-    /// The `Option` stays in the signature rather than becoming `&'static str`:
-    /// `hint` is `null`-able in the published envelope, asserted by
-    /// `json_error_keeps_a_null_hint_rather_than_dropping_the_key`, and
-    /// narrowing the type here would make that shape unrepresentable if a
-    /// future variant genuinely has no next step.
-    pub fn hint(&self) -> Option<&str> {
-        match self {
-            // Delegated codes get a pointer to the table rather than a hint of
-            // their own. There are 44 of them, and writing per-code advice here
-            // would duplicate `docs/error-codes.md` into match arms that drift
-            // from it — the table is generated precisely so there is one copy.
-            //
-            // Neither `clwd_runtime::Error` nor `clwd_bundle::Error` exposes a
-            // `hint()` to forward. That is where the text belongs, and adding it
-            // there is filed as follow-up work; this crate is papering over its
-            // absence, not deciding it should be absent.
-            #[cfg(feature = "run")]
-            Self::Runtime { .. } => Some(DELEGATED_HINT),
-            Self::Bundle { .. } => Some(DELEGATED_HINT),
-            // The platform supplies its own hint in the envelope; forward it.
-            Self::Platform { source } => source.hint(),
-            Self::InvalidArgument { .. } => Some("run `clwd <command> --help` for accepted values"),
-            Self::NotFound { .. } => Some(
-                "check the name for typos, and run the matching `list` command to see what exists",
-            ),
-            Self::NotImplemented { .. } => {
-                Some("track progress at https://github.com/clwdrun/clwd/issues")
-            }
-            Self::Config { .. } => {
-                Some("check the config file the message names; delete it to start from defaults")
-            }
-            Self::ManifestInvalid { .. } => {
-                Some("check clwd.toml against the schema in docs/spec/bundle-v1.md §5")
-            }
-            // The install command is in the message rather than here: it
-            // differs per tool, and a hint is one static string per code.
-            Self::ToolchainMissing { .. } => {
-                Some("install the tool the message names, then run the command again")
-            }
-            Self::BuildFailed { .. } => {
-                Some("the step's own output is above; fix what it reports and build again")
-            }
-            Self::Net { .. } => {
-                Some("check the platform URL and your network connection, then try again")
-            }
-            Self::Internal { .. } => Some("this is a bug in clwd; please report it"),
-        }
-    }
-
     /// Whether retrying the same command unchanged could plausibly succeed.
     ///
     /// Every arm is spelled out rather than collapsed into a default so that
@@ -379,6 +352,33 @@ pub(crate) mod tests {
             produced, declared,
             "a variant is missing from `samples()` or from the enum"
         );
+    }
+
+    #[test]
+    fn every_code_has_a_hint() {
+        let hinted: Vec<&str> = HINTS.iter().map(|(code, _)| *code).collect();
+        assert_eq!(hinted, CODES, "HINTS and CODES disagree");
+        for (code, hint) in HINTS {
+            assert!(!hint.trim().is_empty(), "{code} has an empty hint");
+        }
+        for err in samples() {
+            let published = HINTS
+                .iter()
+                .find(|(c, _)| *c == err.code())
+                .map(|(_, h)| *h);
+            assert_eq!(err.hint(), published, "{}", err.code());
+        }
+    }
+
+    /// A hint never carries error data, so it never needs a placeholder.
+    #[test]
+    fn no_hint_is_a_format_string() {
+        for (code, hint) in HINTS {
+            assert!(
+                !hint.contains(['{', '}']),
+                "{code}: a hint must not interpolate: {hint:?}"
+            );
+        }
     }
 
     #[test]

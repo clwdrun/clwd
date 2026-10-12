@@ -10,7 +10,10 @@ in an envelope:
 {"code":"cli.not_found","message":"…","hint":"…","retryable":false}
 ```
 
-`hint` is always present and may be `null`. One JSON object per line, never a
+`hint` is always present and may be `null`. Every code below has one; only an
+error relayed from a platform can arrive without it. A hint is one static
+sentence, written beside the code that raises the error, and never repeats
+error data — that is what `message` is for. One JSON object per line, never a
 wrapping array — a `clwd logs --follow` that never ends has no closing bracket to
 write.
 
@@ -111,6 +114,8 @@ The command line was not accepted. Either an option was spelled in a way clwd do
 
 **What to do:** Run `clwd <command> --help` to see the accepted options and values, then run the command again with the corrected one.
 
+**Hint** (in the envelope): run `clwd <command> --help` for accepted values
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `cli.not_found`
@@ -118,6 +123,8 @@ The command line was not accepted. Either an option was spelled in a way clwd do
 Something the command referred to by name — an app, a secret, a bundle — does not exist.
 
 **What to do:** Check the name for typos. If it looks right, the thing may have been deleted or belong to a different organisation than the one you are signed in to.
+
+**Hint** (in the envelope): check the name for typos, and run the matching `list` command to see what exists
 
 *Recovery:* `fix_input` · *Reachable:* yes
 
@@ -127,6 +134,8 @@ The command exists and is spelled correctly, but has not been built yet. It appe
 
 **What to do:** There is nothing to fix locally. Track the command's issue at https://github.com/clwdrun/clwd/issues to see when it lands.
 
+**Hint** (in the envelope): track progress at https://github.com/clwdrun/clwd/issues
+
 *Recovery:* `report_bug` · *Reachable:* yes
 
 ### `cli.config`
@@ -134,6 +143,8 @@ The command exists and is spelled correctly, but has not been built yet. It appe
 clwd could not read its own settings for this machine. Either the config file is not where clwd expects it, or it is there but cannot be parsed, or two settings in it contradict each other. This usually follows a hand-edit, an interrupted `clwd init`, or a config written by a different version of clwd.
 
 **What to do:** The message says which setting or file was at fault. If a file is present, correct it; deleting it is always safe, because clwd falls back to its defaults and writes a fresh one. If the message names a setting rather than a file, run `clwd init` to regenerate the config.
+
+**Hint** (in the envelope): check the config file the message names; delete it to start from defaults
 
 *Recovery:* `fix_input` · *Reachable:* yes
 
@@ -143,6 +154,8 @@ The `clwd.toml` in the project being built says something clwd cannot act on. Co
 
 **What to do:** The message names the offending key or file and what is wrong with it. Correct that line. Do not delete the file to start over — it holds the app's capability grants, and an empty one grants nothing at all.
 
+**Hint** (in the envelope): check clwd.toml against the schema in docs/spec/bundle-v1.md §5
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `cli.toolchain_missing`
@@ -150,6 +163,8 @@ The `clwd.toml` in the project being built says something clwd cannot act on. Co
 A program the build needs is not installed, or is installed but will not run on this machine. clwd shells out to a small number of external tools and does not vendor them, so a fresh machine can be missing one.
 
 **What to do:** The message names the tool and the exact command that installs it. Run that command, then run the build again. Nothing in the project needs to change.
+
+**Hint** (in the envelope): install the tool the message names, then run the command again
 
 *Recovery:* `fix_permissions` · *Reachable:* yes
 
@@ -159,6 +174,8 @@ A step of the build ran and reported failure. The commonest cause is that the ap
 
 **What to do:** Read the output printed above the error — it comes from the step that failed and is more specific than anything clwd can add. Fix what it reports, then build again.
 
+**Hint** (in the envelope): Fix the first error in the build output above, then run `clwd build` again.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `cli.internal`
@@ -166,6 +183,8 @@ A step of the build ran and reported failure. The commonest cause is that the ap
 clwd hit a problem it does not have a specific explanation for. This is always a defect in clwd rather than a mistake by the caller.
 
 **What to do:** Nothing the caller can change will help. Report it at https://github.com/clwdrun/clwd/issues with the command that produced it.
+
+**Hint** (in the envelope): Report this at https://github.com/clwdrun/clwd/issues with the command that produced it.
 
 *Recovery:* `report_bug` · *Reachable:* yes
 
@@ -179,6 +198,8 @@ A command that talks to a platform — `clwd publish` — could not reach one. T
 
 **What to do:** Check the platform URL (the `--platform` flag or `CLWD_PLATFORM_URL`) and that you have a working connection, then run the command again. A publish is safe to repeat: the platform records a version once per bundle, so a retry never creates a duplicate.
 
+**Hint** (in the envelope): check the platform URL and your network connection, then try again
+
 *Recovery:* `retry` · *Reachable:* yes
 
 ## `runtime.*` — running an app
@@ -191,6 +212,8 @@ The app was asked for by its content address, but no stored copy with that addre
 
 **What to do:** Publish the app first with `clwd publish`, or check that the address came from the build you meant.
 
+**Hint** (in the envelope): Publish the app with `clwd publish`, or pass the digest from the `clwd build` you meant to run.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `runtime.deadline_exceeded`
@@ -198,6 +221,8 @@ The app was asked for by its content address, but no stored copy with that addre
 The app ran longer than it was allowed to. The message says whether the limit was hit while the app was starting up or while it was handling a request.
 
 **What to do:** Retrying may work if the app was briefly slow. If it happens every time, the app is doing too much work for its time budget — raise `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild.
+
+**Hint** (in the envelope): Raise `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild with `clwd build`, or make the request handler do less work.
 
 *Recovery:* `retry` · *Reachable:* yes
 
@@ -207,6 +232,8 @@ The app was running but is no longer. It exited on its own, crashed, or was recl
 
 **What to do:** Start it again. If it stops repeatedly, `clwd logs` will show what the app printed before it went away.
 
+**Hint** (in the envelope): Start the app again, and read `clwd logs` for what it printed before it stopped.
+
 *Recovery:* `retry` · *Reachable:* yes
 
 ### `runtime.resource_exhausted`
@@ -214,6 +241,8 @@ The app was running but is no longer. It exited on its own, crashed, or was recl
 The app asked for more of a resource — memory, most often — than its manifest allows. The message names the limit and the amount allowed.
 
 **What to do:** Raise the matching limit under `capabilities.limits` in `clwd.toml` and rebuild, or change the app to use less.
+
+**Hint** (in the envelope): Make the app use less of the resource the message names, or raise `capabilities.limits.memory_mb` in `clwd.toml` when that resource is memory.
 
 *Recovery:* `fix_input` · *Reachable:* yes
 
@@ -223,6 +252,8 @@ The app itself failed — it panicked, hit an assertion, or executed something i
 
 **What to do:** The message carries the app's own failure text and a backtrace. Fix the app, rebuild with `clwd build`, and run it again.
 
+**Hint** (in the envelope): Fix the failure the message reports in the app's code, then rebuild with `clwd build`.
+
 *Recovery:* `rebuild` · *Reachable:* yes
 
 ### `runtime.incompatible_interface`
@@ -230,6 +261,8 @@ The app itself failed — it panicked, hit an assertion, or executed something i
 The app was built against a version of a clwd interface this runtime no longer provides — usually an app written from an older template or SDK. It is refused before it runs. The message names the interface and its version.
 
 **What to do:** Update the app's `clwd-sdk` to the current version, fix what no longer compiles, and rebuild with `clwd build`.
+
+**Hint** (in the envelope): Update the app's `clwd-sdk` dependency to the current version and rebuild with `clwd build`.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -239,6 +272,8 @@ The app tried to use something its manifest does not grant: an outbound request 
 
 **What to do:** Add the host to `egress`, or a name to `storage_namespaces` to enable app-data, in `clwd.toml` under `[capabilities]`, then rebuild with `clwd build`. If the app should not be reaching that host at all, the denial is working as intended.
 
+**Hint** (in the envelope): Add the denied host to `capabilities.egress` or a namespace to `capabilities.storage_namespaces` in `clwd.toml`, then rebuild with `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `runtime.internal`
@@ -246,6 +281,8 @@ The app tried to use something its manifest does not grant: an outbound request 
 The sandbox hit a problem it does not have a specific explanation for. This is a defect in clwd rather than in the app.
 
 **What to do:** Nothing the caller can change will help. Report it at https://github.com/clwdrun/clwd/issues.
+
+**Hint** (in the envelope): Report this at https://github.com/clwdrun/clwd/issues with the command that produced it.
 
 *Recovery:* `report_bug` · *Reachable:* yes
 
@@ -259,6 +296,8 @@ The file is not an app bundle at all. clwd could not read it as an archive.
 
 **What to do:** Check the path points at a file `clwd build` produced. If it does, the file is damaged — build it again with `clwd build`.
 
+**Hint** (in the envelope): Point the command at a bundle file that `clwd build` produced.
+
 *Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.magic_invalid`
@@ -266,6 +305,8 @@ The file is not an app bundle at all. clwd could not read it as an archive.
 The bundle's internal structure is corrupt. Part of it that identifies the archive format is wrong.
 
 **What to do:** The file was damaged in transit or storage. Build it again with `clwd build`.
+
+**Hint** (in the envelope): Rebuild the damaged bundle with `clwd build`.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -275,6 +316,8 @@ The bundle contains something other than an ordinary file — a symbolic link, a
 
 **What to do:** Remove the link or special file from your project and run `clwd build` again.
 
+**Hint** (in the envelope): Replace the symlink or special file in your project with a regular file, then run `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.prefix_not_empty`
@@ -282,6 +325,8 @@ The bundle contains something other than an ordinary file — a symbolic link, a
 The bundle uses an older archive layout that clwd does not accept, because the same file can be described two ways in it and two descriptions of one file mean two different content addresses.
 
 **What to do:** The bundle was not produced by this version of clwd. Build it again with `clwd build`.
+
+**Hint** (in the envelope): Rebuild the bundle with this version of `clwd build`.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -291,6 +336,8 @@ A file in the bundle has unexpected permissions. Bundles allow only ordinary rea
 
 **What to do:** Reset the file's permissions in your project — `chmod 644` for data, `chmod 755` for programs — and run `clwd build` again.
 
+**Hint** (in the envelope): Set the file to mode 644, or 755 if it is executable, then run `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.metadata_not_canonical`
@@ -298,6 +345,8 @@ A file in the bundle has unexpected permissions. Bundles allow only ordinary rea
 A file in the bundle carries machine-specific details such as a timestamp or an owner name. Bundles deliberately leave these out, so that building the same project twice produces an identical file.
 
 **What to do:** The bundle was not produced by `clwd build`, or was rewritten by another tool afterwards. Build it again with `clwd build`.
+
+**Hint** (in the envelope): Rebuild the bundle with `clwd build` instead of repacking it with another archiver.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -307,6 +356,8 @@ A self-check inside the bundle failed. The file has been damaged.
 
 **What to do:** Build it again with `clwd build`. If it keeps happening, the storage or network carrying the file is corrupting it.
 
+**Hint** (in the envelope): Rebuild the damaged bundle with `clwd build`.
+
 *Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.size_encoding_invalid`
@@ -314,6 +365,8 @@ A self-check inside the bundle failed. The file has been damaged.
 The bundle records the length of one of its files in a form clwd does not accept. The file is corrupt or was written by a different tool.
 
 **What to do:** Build it again with `clwd build`.
+
+**Hint** (in the envelope): Rebuild the damaged bundle with `clwd build`.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -323,6 +376,8 @@ One file inside the bundle is larger than the 8 GiB maximum a bundle can describ
 
 **What to do:** Remove or shrink the oversized file — large assets usually belong in storage the app fetches at run time, not inside the app itself — then run `clwd build` again.
 
+**Hint** (in the envelope): Remove or shrink the oversized file in your project, then run `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.padding_invalid`
@@ -330,6 +385,8 @@ One file inside the bundle is larger than the 8 GiB maximum a bundle can describ
 Unused space inside the bundle contains stray data rather than being empty. The file has been damaged or modified.
 
 **What to do:** Build it again with `clwd build`.
+
+**Hint** (in the envelope): Rebuild the damaged bundle with `clwd build`.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -339,6 +396,8 @@ The files inside the bundle are not in the fixed order clwd requires. The order 
 
 **What to do:** The bundle was assembled or rewritten by something other than `clwd build`. Build it again with `clwd build`.
 
+**Hint** (in the envelope): Rebuild the bundle with `clwd build` instead of repacking it with another archiver.
+
 *Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.trailer_invalid`
@@ -346,6 +405,8 @@ The files inside the bundle are not in the fixed order clwd requires. The order 
 The bundle is cut short or has extra data after its end. It was truncated in transit, or two files were joined together.
 
 **What to do:** Download or build the bundle again with `clwd build`.
+
+**Hint** (in the envelope): Download the bundle again, or rebuild it with `clwd build`.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -355,6 +416,8 @@ A file inside the bundle has a name clwd will not accept — an absolute path, o
 
 **What to do:** Rename the file in your project so its path is relative and contains no `..` segments, then run `clwd build` again.
 
+**Hint** (in the envelope): Rename the file the message names so its path is relative with no `..` segment, then run `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.path_not_nfc`
@@ -362,6 +425,8 @@ A file inside the bundle has a name clwd will not accept — an absolute path, o
 A file name uses accented or non-English characters written in a form that some systems store differently. macOS and Linux disagree about how to spell such names, and the disagreement would give the same project two different content addresses.
 
 **What to do:** Rename the file, retyping the accented characters rather than pasting them, then run `clwd build` again.
+
+**Hint** (in the envelope): Rename the file the message names using NFC-normalized characters, then run `clwd build`.
 
 *Recovery:* `fix_input` · *Reachable:* yes
 
@@ -371,6 +436,8 @@ A file's path inside the bundle is longer than the 100-byte maximum.
 
 **What to do:** Shorten the folder or file names in your project so the whole path fits within 100 bytes, then run `clwd build` again.
 
+**Hint** (in the envelope): Shorten the path the message names to 100 bytes or fewer, then run `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.path_duplicate`
@@ -378,6 +445,8 @@ A file's path inside the bundle is longer than the 100-byte maximum.
 The same file path appears twice in the bundle, so which one the app would actually get is ambiguous.
 
 **What to do:** The bundle was assembled by something other than `clwd build`. Build it again with `clwd build`.
+
+**Hint** (in the envelope): Rebuild the bundle with `clwd build` instead of assembling it by hand.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -387,6 +456,8 @@ The bundle has no `clwd.toml`. That file is what says which program to run and w
 
 **What to do:** Add a `clwd.toml` to your project — `clwd init` creates one — then run `clwd build` again.
 
+**Hint** (in the envelope): Add a `clwd.toml` to the project root, then run `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.manifest_not_toml`
@@ -394,6 +465,8 @@ The bundle has no `clwd.toml`. That file is what says which program to run and w
 The `clwd.toml` file could not be read. Its text is not valid TOML — usually a missing quote, bracket, or equals sign.
 
 **What to do:** The message names the line. Fix the syntax in `clwd.toml` and run `clwd build` again.
+
+**Hint** (in the envelope): Fix the TOML syntax error the message points to in `clwd.toml`, then run `clwd build`.
 
 *Recovery:* `fix_input` · *Reachable:* yes
 
@@ -403,6 +476,8 @@ The `clwd.toml` file could not be read. Its text is not valid TOML — usually a
 
 **What to do:** Add `schema_version = 1` at the top of `clwd.toml` and run `clwd build` again.
 
+**Hint** (in the envelope): Add `schema_version = 1` to the top of `clwd.toml`, then run `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.schema_version_unsupported`
@@ -410,6 +485,8 @@ The `clwd.toml` file could not be read. Its text is not valid TOML — usually a
 `clwd.toml` is written in a newer format version than this copy of clwd understands.
 
 **What to do:** Update clwd to a version that reads this format, or set `schema_version = 1` and adjust the file to match the older format.
+
+**Hint** (in the envelope): Set `schema_version = 1` in `clwd.toml`, or upgrade clwd to a version that reads the newer format.
 
 *Recovery:* `fix_input` · *Reachable:* yes
 
@@ -419,6 +496,8 @@ The `clwd.toml` file could not be read. Its text is not valid TOML — usually a
 
 **What to do:** The message names the key. Remove it or correct the spelling, then run `clwd build` again.
 
+**Hint** (in the envelope): Remove or correct the key the message names in `clwd.toml`, then run `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.capability_unknown_key`
@@ -426,6 +505,8 @@ The `clwd.toml` file could not be read. Its text is not valid TOML — usually a
 `clwd.toml` asks for a permission this version of clwd does not know how to enforce. Refusing is deliberate: running anyway would give the app less protection than its author asked for.
 
 **What to do:** Update clwd to a version that supports the permission, or remove it from the `[capabilities]` section and run `clwd build` again.
+
+**Hint** (in the envelope): Remove the capability key the message names from `clwd.toml`, or upgrade clwd to a version that enforces it.
 
 *Recovery:* `fix_input` · *Reachable:* yes
 
@@ -435,6 +516,8 @@ The permissions section of `clwd.toml` is written in a newer format version than
 
 **What to do:** Update clwd, or set `capabilities.version = 1` and adjust that section to match, then run `clwd build` again.
 
+**Hint** (in the envelope): Set `capabilities.version = 1` in `clwd.toml`, or upgrade clwd to a version that enforces the newer capabilities.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.field_missing`
@@ -442,6 +525,8 @@ The permissions section of `clwd.toml` is written in a newer format version than
 A setting that `clwd.toml` must contain is absent.
 
 **What to do:** The message names the missing key. Add it to `clwd.toml` and run `clwd build` again.
+
+**Hint** (in the envelope): Add the key the message names to `clwd.toml`, then run `clwd build`.
 
 *Recovery:* `fix_input` · *Reachable:* yes
 
@@ -451,6 +536,8 @@ A setting in `clwd.toml` is the wrong kind of value — a number where text was 
 
 **What to do:** The message names the key and the kind of value it needs. Correct it in `clwd.toml` and run `clwd build` again.
 
+**Hint** (in the envelope): Change the key the message names in `clwd.toml` to the type it expects, then run `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.field_value_invalid`
@@ -458,6 +545,8 @@ A setting in `clwd.toml` is the wrong kind of value — a number where text was 
 A setting in `clwd.toml` is the right kind of value but not an allowed one — a negative limit, or an empty name.
 
 **What to do:** The message names the key and why the value was refused. Correct it in `clwd.toml` and run `clwd build` again.
+
+**Hint** (in the envelope): Correct the value of the key the message names in `clwd.toml`, then run `clwd build`.
 
 *Recovery:* `fix_input` · *Reachable:* yes
 
@@ -467,6 +556,8 @@ A setting in `clwd.toml` is the right kind of value but not an allowed one — a
 
 **What to do:** Set `runtime` to either `wasm` or `microvm` in `clwd.toml` and run `clwd build` again.
 
+**Hint** (in the envelope): Set `runtime = "wasm"` in `clwd.toml`, then run `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.manifest_not_canonical`
@@ -474,6 +565,8 @@ A setting in `clwd.toml` is the right kind of value but not an allowed one — a
 `clwd.toml` inside the bundle is not stored in the exact layout clwd requires. The layout is fixed so that the same project always produces the same bundle, byte for byte.
 
 **What to do:** The file was edited after the bundle was built. Build it again with `clwd build`.
+
+**Hint** (in the envelope): Rebuild the bundle with `clwd build` instead of editing its `clwd.toml` afterwards.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -483,6 +576,8 @@ A setting in `clwd.toml` is the right kind of value but not an allowed one — a
 
 **What to do:** The bundle was assembled by something other than `clwd build`. Build it again with `clwd build`.
 
+**Hint** (in the envelope): Rebuild the bundle with `clwd build` instead of writing `[[members]]` by hand.
+
 *Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.member_missing`
@@ -490,6 +585,8 @@ A setting in `clwd.toml` is the right kind of value but not an allowed one — a
 `clwd.toml` lists a file as part of the app, but that file is not actually in the bundle.
 
 **What to do:** The bundle is incomplete — a build was interrupted, or the file was removed afterwards. Build it again with `clwd build`.
+
+**Hint** (in the envelope): Rebuild the incomplete bundle with `clwd build`.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -499,6 +596,8 @@ The bundle contains a file that `clwd.toml` does not list. Every file must be li
 
 **What to do:** The bundle was modified after it was built. Build it again with `clwd build`.
 
+**Hint** (in the envelope): Rebuild the bundle with `clwd build` instead of adding files to it afterwards.
+
 *Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.member_size_mismatch`
@@ -506,6 +605,8 @@ The bundle contains a file that `clwd.toml` does not list. Every file must be li
 A file inside the bundle is a different size from what `clwd.toml` says it should be.
 
 **What to do:** The bundle is damaged or was modified after it was built. Build it again with `clwd build`.
+
+**Hint** (in the envelope): Rebuild the bundle with `clwd build` instead of modifying its files afterwards.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -515,6 +616,8 @@ A file inside the app bundle does not match what the bundle says it should conta
 
 **What to do:** Build it again with `clwd build`. If the bundle came from somewhere else, do not run it — the contents are not what its author signed.
 
+**Hint** (in the envelope): Rebuild the bundle with `clwd build` and discard the copy whose contents fail their digest.
+
 *Recovery:* `rebuild` · *Reachable:* yes
 
 ### `bundle.digest_malformed`
@@ -522,6 +625,8 @@ A file inside the app bundle does not match what the bundle says it should conta
 A content address in `clwd.toml` is not written in the required form: `blake3:` followed by 64 lowercase hexadecimal characters.
 
 **What to do:** The file was hand-edited. Build the bundle again with `clwd build` so the addresses are written for you.
+
+**Hint** (in the envelope): Rebuild the bundle with `clwd build` instead of hand-editing digests in `clwd.toml`.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -531,6 +636,8 @@ A content address in `clwd.toml` is not written in the required form: `blake3:` 
 
 **What to do:** Correct `app.entrypoint` in `clwd.toml` so it names a file the bundle actually contains, then run `clwd build` again.
 
+**Hint** (in the envelope): Set `app.entrypoint` in `clwd.toml` to a file the bundle includes, then run `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.wasm_not_component`
@@ -538,6 +645,8 @@ A content address in `clwd.toml` is not written in the required form: `blake3:` 
 The app was built as an older, simpler kind of WebAssembly program than the `wasm` sandbox can run. It needs to be a component, which is the form that can declare what it needs from the outside world.
 
 **What to do:** Build for the `wasm32-wasip2` target — `cargo build --target wasm32-wasip2` — then run `clwd build` again.
+
+**Hint** (in the envelope): Build the app for the `wasm32-wasip2` target so it produces a component, then run `clwd build`.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -547,6 +656,8 @@ The file `clwd.toml` names as the program is not WebAssembly at all.
 
 **What to do:** Check that `app.entrypoint` points at the compiled `.wasm` file rather than at source code, then run `clwd build` again.
 
+**Hint** (in the envelope): Point `app.entrypoint` in `clwd.toml` at the compiled `.wasm` component, then run `clwd build`.
+
 *Recovery:* `fix_input` · *Reachable:* yes
 
 ### `bundle.digest_mismatch`
@@ -554,6 +665,8 @@ The file `clwd.toml` names as the program is not WebAssembly at all.
 The bundle as a whole does not match the content address it was asked for. The file that arrived is not the one that was requested.
 
 **What to do:** The download was corrupted or the wrong file was fetched. Fetch or build it again. If it keeps happening with a bundle from someone else, do not run it.
+
+**Hint** (in the envelope): Fetch the bundle again from its source, or rebuild it with `clwd build`.
 
 *Recovery:* `rebuild` · *Reachable:* yes
 
@@ -566,7 +679,7 @@ The generated catalogue and its exhaustiveness test both come from the same macr
 literal, so they move together and cannot catch a rename on their own. This file is
 the external anchor that does not move. To change a code deliberately:
 
-1. Change the literal in the owning crate's `error.rs`.
+1. Change the literal, and its hint, in the owning crate's `error.rs`.
 2. Update its row in `crates/cli/tests/error_table.rs`.
 3. Run `just error-table` to regenerate this page.
 4. Commit all three together — the diff is the record that it was deliberate.

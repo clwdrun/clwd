@@ -20,7 +20,8 @@ use std::time::Duration;
 
 use clwd_bundle::BundleRef;
 
-/// Declares `Error`, its `code()`, and the list of codes this crate owns.
+/// Declares `Error`, its `code()` and `hint()`, and the codes and hints this
+/// crate owns.
 ///
 /// # Attributes are emitted here, not forwarded
 ///
@@ -39,6 +40,13 @@ use clwd_bundle::BundleRef;
 /// `owned` variants carry a `runtime.*` literal. Splitting them structurally
 /// keeps the owned list honest: it is exactly the codes this crate is
 /// responsible for.
+///
+/// # Hints are literals
+///
+/// Each owned variant carries one static sentence saying what to do next. It
+/// is a string literal rather than a format string, so it cannot carry error
+/// data: a trap message or a denied host is untrusted, and belongs in the
+/// message rather than in the recovery text.
 macro_rules! define_error {
     (
         // Braced so the two repetitions are bounded: without a delimiter the
@@ -52,7 +60,7 @@ macro_rules! define_error {
         owned {
             $(
                 $(#[$oattr:meta])*
-                $ovariant:ident { $($ofield:tt)* } => $ocode:literal;
+                $ovariant:ident { $($ofield:tt)* } => $ocode:literal, $ohint:literal;
             )*
         }
     ) => {
@@ -73,15 +81,28 @@ macro_rules! define_error {
                     $( Self::$ovariant { .. } => $ocode, )*
                 }
             }
+
+            /// What to do next: one imperative sentence naming the command or
+            /// `clwd.toml` key to change. A delegating variant forwards its
+            /// source's hint, as it forwards its code.
+            pub fn hint(&self) -> &'static str {
+                match self {
+                    $( Self::$dvariant { source } => source.hint(), )*
+                    $( Self::$ovariant { .. } => $ohint, )*
+                }
+            }
         }
 
-        /// Every code this crate owns. Delegated codes belong to the crate that
-        /// defines them and are catalogued there.
         /// Every code this crate owns, generated from the same input as the
         /// enum. Delegated codes belong to the crate that defines them and are
         /// catalogued there. Public because `docs/error-codes.md` is built from
         /// it — a catalogue only the tests can see cannot be published.
         pub const OWNED_CODES: &[&str] = &[$($ocode),*];
+
+        /// Every owned code paired with its hint, generated from the same input
+        /// as [`Error::hint`]. Public because the error-code table is built
+        /// from it.
+        pub const OWNED_HINTS: &[(&str, &str)] = &[$(($ocode, $ohint)),*];
     };
 }
 
@@ -98,13 +119,15 @@ define_error! {
         ///
         /// Distinct from [`Error::Bundle`]: the bundle is absent, not invalid.
         #[error("no bundle stored under {bundle}")]
-        BundleNotFound { bundle: BundleRef } => "runtime.bundle_not_found";
+        BundleNotFound { bundle: BundleRef } => "runtime.bundle_not_found",
+            "Publish the app with `clwd publish`, or pass the digest from the `clwd build` you meant to run.";
 
         /// A deadline expired. `phase` says which budget: cold start and
         /// invocation are separate, and #17 must be able to blow one without
         /// blaming the other.
         #[error("{phase} exceeded its deadline of {limit:?}")]
-        DeadlineExceeded { phase: Phase, limit: Duration } => "runtime.deadline_exceeded";
+        DeadlineExceeded { phase: Phase, limit: Duration } => "runtime.deadline_exceeded",
+            "Raise `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild with `clwd build`, or make the request handler do less work.";
 
         /// The instance is gone — it crashed, was reclaimed, or its guest
         /// exited.
@@ -112,7 +135,8 @@ define_error! {
         /// This is never use-after-stop: `stop` consumes the `Handle`, so that
         /// is a compile error rather than a runtime one.
         #[error("the instance is no longer running")]
-        Stopped {} => "runtime.stopped";
+        Stopped {} => "runtime.stopped",
+            "Start the app again, and read `clwd logs` for what it printed before it stopped.";
 
         /// The guest asked for more of a resource than its manifest sealed.
         ///
@@ -124,7 +148,8 @@ define_error! {
             limit: &'static str,
             requested: u64,
             allowed: u64,
-        } => "runtime.resource_exhausted";
+        } => "runtime.resource_exhausted",
+            "Make the app use less of the resource the message names, or raise `capabilities.limits.memory_mb` in `clwd.toml` when that resource is memory.";
 
         /// The guest trapped: an unreachable, a failed assertion, a panic in
         /// guest code, or an epoch/fuel interruption.
@@ -133,7 +158,8 @@ define_error! {
         /// an app author gets — summarizing it here would discard the one thing
         /// that makes the failure actionable.
         #[error("guest trapped: {message}")]
-        Trap { message: String } => "runtime.trap";
+        Trap { message: String } => "runtime.trap",
+            "Fix the failure the message reports in the app's code, then rebuild with `clwd build`.";
 
         /// A guest was refused a capability its manifest did not grant: an
         /// outbound request to an undeclared host, or an app-data operation when
@@ -146,7 +172,8 @@ define_error! {
         /// probe which host or namespace it was blocked from — see the module
         /// docs in `wasm/capability.rs`.
         #[error("capability denied: {detail}")]
-        CapabilityDenied { detail: String } => "runtime.capability_denied";
+        CapabilityDenied { detail: String } => "runtime.capability_denied",
+            "Add the denied host to `capabilities.egress` or a namespace to `capabilities.storage_namespaces` in `clwd.toml`, then rebuild with `clwd build`.";
 
         /// The component imports a first-party interface at a version this
         /// runtime does not provide: almost always an app built against an
@@ -157,7 +184,8 @@ define_error! {
             "the component imports {import}, which this runtime does not provide; \
              rebuild it against the current clwd-sdk"
         )]
-        IncompatibleInterface { import: String } => "runtime.incompatible_interface";
+        IncompatibleInterface { import: String } => "runtime.incompatible_interface",
+            "Update the app's `clwd-sdk` dependency to the current version and rebuild with `clwd build`.";
 
         /// Last resort only, never where a specific variant fits. A boxed
         /// opaque source in a library error type is tolerable as a genuine
@@ -166,7 +194,8 @@ define_error! {
         Internal {
             #[source]
             source: Box<dyn std::error::Error + Send + Sync>,
-        } => "runtime.internal";
+        } => "runtime.internal",
+            "Report this at https://github.com/clwdrun/clwd/issues with the command that produced it.";
     }
 }
 
@@ -246,6 +275,44 @@ mod tests {
             produced, declared,
             "a variant is missing from `owned_samples()` or from the enum"
         );
+    }
+
+    #[test]
+    fn every_owned_code_has_a_hint() {
+        let hinted: Vec<&str> = OWNED_HINTS.iter().map(|(code, _)| *code).collect();
+        assert_eq!(hinted, OWNED_CODES, "OWNED_HINTS and OWNED_CODES disagree");
+        for (code, hint) in OWNED_HINTS {
+            assert!(!hint.trim().is_empty(), "{code} has an empty hint");
+        }
+    }
+
+    /// `hint()` returns what the catalogue publishes, for every variant. A
+    /// default arm placed ahead of the generated ones would shadow them and
+    /// fail here.
+    #[test]
+    fn hint_agrees_with_the_catalogue() {
+        let catalogue: std::collections::BTreeMap<&str, &str> =
+            OWNED_HINTS.iter().copied().collect();
+        for err in owned_samples() {
+            assert_eq!(err.hint(), catalogue[err.code()], "{}", err.code());
+        }
+        let bundle = Error::from(clwd_bundle::Error::ManifestMissing {});
+        assert_eq!(
+            bundle.hint(),
+            clwd_bundle::Error::ManifestMissing {}.hint(),
+            "a delegating variant forwards its source's hint"
+        );
+    }
+
+    /// A hint never carries error data, so it never needs a placeholder.
+    #[test]
+    fn no_hint_is_a_format_string() {
+        for (code, hint) in OWNED_HINTS {
+            assert!(
+                !hint.contains(['{', '}']),
+                "{code}: a hint must not interpolate: {hint:?}"
+            );
+        }
     }
 
     #[test]

@@ -146,6 +146,51 @@ mod tests {
         }
     }
 
+    /// The envelope byte for byte, with the hint the bundle crate wrote for the
+    /// code, in field order `code, message, hint, retryable`.
+    #[test]
+    fn bundle_error_envelope_bytes() {
+        let err = CliError::from(clwd_bundle::Error::ManifestMissing {});
+        assert_eq!(
+            render_error(Format::Json, &err),
+            "{\"code\":\"bundle.manifest_missing\",\
+             \"message\":\"no clwd.toml in the archive\",\
+             \"hint\":\"Add a `clwd.toml` to the project root, then run `clwd build`.\",\
+             \"retryable\":false}\n"
+        );
+    }
+
+    #[cfg(feature = "run")]
+    #[test]
+    fn runtime_error_envelope_bytes() {
+        let err = CliError::Runtime {
+            source: clwd_runtime::Error::Stopped {},
+        };
+        assert_eq!(
+            render_error(Format::Json, &err),
+            "{\"code\":\"runtime.stopped\",\
+             \"message\":\"the instance is no longer running\",\
+             \"hint\":\"Start the app again, and read `clwd logs` for what it printed before \
+             it stopped.\",\
+             \"retryable\":false}\n"
+        );
+    }
+
+    /// A delegated error shows the hint its own crate wrote, not a pointer to
+    /// the docs.
+    #[test]
+    fn human_error_shows_the_delegated_hint() {
+        let rendered = render_error(
+            Format::Human,
+            &CliError::from(clwd_bundle::Error::ManifestMissing {}),
+        );
+        assert_eq!(
+            rendered,
+            "error: no clwd.toml in the archive\n\
+             hint: Add a `clwd.toml` to the project root, then run `clwd build`.\n"
+        );
+    }
+
     #[test]
     fn human_error_shows_the_hint_when_there_is_one() {
         let rendered = render_error(Format::Human, &CliError::NotImplemented { command: "run" });
