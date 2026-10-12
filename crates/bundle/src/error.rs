@@ -235,6 +235,111 @@ mod tests {
     use super::*;
     use std::collections::BTreeSet;
 
+    /// One sample per variant, written out (fields are placeholders). `CODES`
+    /// is generated from the enum, so a variant missing here fails
+    /// `samples_cover_every_code`.
+    fn samples() -> Vec<Error> {
+        vec![
+            Error::NotTar { reason: "x" },
+            Error::MagicInvalid { offset: 0 },
+            Error::EntryTypeInvalid {
+                offset: 0,
+                typeflag: 0,
+            },
+            Error::PrefixNotEmpty { offset: 0 },
+            Error::ModeInvalid {
+                offset: 0,
+                mode: "x".into(),
+            },
+            Error::MetadataNotCanonical {
+                offset: 0,
+                field: "x",
+            },
+            Error::ChecksumInvalid { offset: 0 },
+            Error::SizeEncodingInvalid { offset: 0 },
+            Error::MemberTooLarge { size: 0 },
+            Error::PaddingInvalid { offset: 0 },
+            Error::EntriesNotSorted {
+                previous: "x".into(),
+                current: "x".into(),
+            },
+            Error::TrailerInvalid { reason: "x" },
+            Error::PathInvalid {
+                path: "x".into(),
+                reason: "x",
+            },
+            Error::PathNotNfc { path: "x".into() },
+            Error::PathTooLong {
+                path: "x".into(),
+                len: 0,
+            },
+            Error::PathDuplicate { path: "x".into() },
+            Error::ManifestMissing {},
+            Error::ManifestNotToml { reason: "x".into() },
+            Error::SchemaVersionMissing {},
+            Error::SchemaVersionUnsupported { found: 0 },
+            Error::UnknownKey { key: "x".into() },
+            Error::CapabilityUnknownKey { key: "x".into() },
+            Error::CapabilitiesVersionUnsupported { found: 0 },
+            Error::FieldMissing { key: "x".into() },
+            Error::FieldTypeInvalid {
+                key: "x".into(),
+                expected: "x",
+            },
+            Error::FieldValueInvalid {
+                key: "x".into(),
+                reason: "x".into(),
+            },
+            Error::RuntimeUnknown { found: "x".into() },
+            Error::ManifestNotCanonical { reason: "x".into() },
+            Error::ManifestSelfListed {},
+            Error::MemberMissing { path: "x".into() },
+            Error::MemberUnlisted { path: "x".into() },
+            Error::MemberSizeMismatch {
+                path: "x".into(),
+                declared: 0,
+                actual: 0,
+            },
+            Error::MemberDigestMismatch { path: "x".into() },
+            Error::DigestMalformed { value: "x".into() },
+            Error::EntrypointNotAMember {
+                entrypoint: "x".into(),
+            },
+            Error::WasmNotComponent {},
+            Error::WasmPreambleInvalid {},
+            Error::DigestMismatch {
+                expected: "x".into(),
+                actual: "x".into(),
+            },
+        ]
+    }
+
+    #[test]
+    fn samples_cover_every_code() {
+        let produced: BTreeSet<&str> = samples().iter().map(Error::code).collect();
+        let declared: BTreeSet<&str> = CODES.iter().copied().collect();
+        assert_eq!(produced, declared, "a variant is missing from `samples()`");
+    }
+
+    /// `hint()` returns what `HINTS` publishes, for every variant. A catch-all
+    /// arm placed ahead of the generated ones would shadow them and fail here,
+    /// in tests rather than only under clippy.
+    #[test]
+    fn hint_agrees_with_the_catalogue() {
+        let catalogue: std::collections::BTreeMap<&str, &str> = HINTS.iter().copied().collect();
+        for err in samples() {
+            assert_eq!(err.hint(), catalogue[err.code()], "{}", err.code());
+        }
+    }
+
+    /// §9: nothing in this catalogue is retryable.
+    #[test]
+    fn nothing_is_retryable() {
+        for err in samples() {
+            assert!(!err.retryable(), "{} claims to be retryable", err.code());
+        }
+    }
+
     #[test]
     fn codes_are_unique() {
         let unique: BTreeSet<&str> = CODES.iter().copied().collect();

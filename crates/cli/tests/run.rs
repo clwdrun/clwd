@@ -246,7 +246,7 @@ fn a_file_that_is_not_a_bundle_surfaces_its_own_code() {
 /// A guest that never yields is stopped by its sealed CPU budget, and the
 /// runtime code arrives verbatim.
 #[test]
-fn a_guest_over_its_cpu_budget_surfaces_runtime_deadline_exceeded() {
+fn a_guest_over_its_cpu_budget_surfaces_runtime_cpu_budget_exceeded() {
     let scratch = Scratch::new("spin");
     // 50ms is hundreds of times a normal request and still quick to hit.
     let bundle = bundle_at(scratch.path(), "app.clwd", 50, 128);
@@ -262,8 +262,12 @@ fn a_guest_over_its_cpu_budget_surfaces_runtime_deadline_exceeded() {
     assert_eq!(code(&out), 1);
     let json = envelope(&out);
     assert_eq!(
-        json["code"], "runtime.deadline_exceeded",
-        "a preempted guest is a deadline, not a trap: {json}"
+        json["code"], "runtime.cpu_budget_exceeded",
+        "a preempted guest is its CPU budget, not a trap: {json}"
+    );
+    assert_eq!(
+        json["retryable"], false,
+        "the runtime decides retryability and the CLI forwards it: {json}"
     );
 }
 

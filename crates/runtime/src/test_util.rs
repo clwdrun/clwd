@@ -23,7 +23,7 @@ use async_trait::async_trait;
 use futures_core::Stream;
 
 use crate::call::{Body, InvokeOptions, Request, Response, SpawnOptions};
-use crate::error::{Error, Phase, Result};
+use crate::error::{Error, Result};
 use crate::handle::{Handle, InstanceId};
 use crate::identity::{Caller, IdentityCtx};
 use crate::logs::{LogLine, LogStream};
@@ -193,8 +193,7 @@ impl Sandbox for TestSandbox {
         clwd_bundle::decode(&bytes, None)?;
 
         if overruns(opts.deadline, state.spawn_cost) {
-            return Err(Error::DeadlineExceeded {
-                phase: Phase::Spawn,
+            return Err(Error::SpawnDeadlineExceeded {
                 limit: state.spawn_cost,
             });
         }
@@ -227,10 +226,7 @@ impl Sandbox for TestSandbox {
         record.invocations += 1;
 
         if overruns(opts.deadline, cost) {
-            return Err(Error::DeadlineExceeded {
-                phase: Phase::Invoke,
-                limit: cost,
-            });
+            return Err(Error::InvokeDeadlineExceeded { limit: cost });
         }
 
         Ok((state.responder)(&req))

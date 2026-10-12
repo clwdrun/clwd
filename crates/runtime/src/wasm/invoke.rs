@@ -13,7 +13,7 @@ use wasmtime_wasi_http::p2::bindings::http::types::Scheme;
 use wasmtime_wasi_http::p2::body::HyperIncomingBody;
 
 use crate::call::{Body, MAX_RESPONSE_BODY, Request, RequestId, Response};
-use crate::error::{Error, Phase, Result};
+use crate::error::{Error, Result};
 use crate::identity::IdentityCtx;
 use crate::wasm::budget::Budget;
 use crate::wasm::cache::Prepared;
@@ -98,7 +98,7 @@ pub(super) async fn run(
         remaining = remaining.saturating_sub(slice);
         if remaining == 0 {
             // Budget spent. Raises `Trap::Interrupt`, which the error mapping
-            // below turns into `runtime.deadline_exceeded` rather than a trap.
+            // below turns into `runtime.cpu_budget_exceeded` rather than a trap.
             return Ok(UpdateDeadline::Interrupt);
         }
         // Trim the last slice to what is left, so the budget is enforced to the
@@ -110,7 +110,7 @@ pub(super) async fn run(
     let proxy = prepared
         .instantiate_async(&mut store)
         .await
-        .map_err(|e| classify(e, Phase::Spawn, &budget, "instantiating"))?;
+        .map_err(|e| classify(e, &budget, "instantiating"))?;
 
     let (parts, body) = req.into_parts();
     // `Full` hands the `Bytes` out as a single frame: the buffer is moved, not
@@ -162,11 +162,7 @@ pub(super) async fn run(
             .await
             .map_err(|e| {
                 if e.is::<http_body_util::LengthLimitError>() {
-                    Error::ResourceExhausted {
-                        limit: "response body",
-                        // At least this much: reading stops at the first byte
-                        // over.
-                        requested: MAX_RESPONSE_BODY as u64 + 1,
+                    Error::ResponseTooLarge {
                         allowed: MAX_RESPONSE_BODY as u64,
                     }
                 } else {
@@ -201,33 +197,13 @@ pub(super) async fn run(
     match (call, read) {
         // The cap is the cause even when the guest then fails on its closed
         // body stream, so it wins over whatever the guest did next.
-        (_, Err(e @ Error::ResourceExhausted { .. })) => Err(e),
-        (Err(e), _) => Err(classify(e, Phase::Invoke, &budget, "guest")),
+        (_, Err(e @ Error::ResponseTooLarge { .. })) => Err(e),
+        (Err(e), _) => Err(classify(e, &budget, "guest")),
         (Ok(()), read) => read,
     }
 }
 
 /// Turn a failure out of wasm into the right error.
-///
-/// # On `Phase::Spawn`
-///
-/// #55 added the `phase` argument and its note characterised a spawn-phase
-/// deadline as unreachable. That holds only for the path *through this
-/// function*, not for the spawn phase as a whole: `DeadlineExceeded { phase:
-/// Spawn }` **is** reachable and is a conformance requirement (R2.5). `spawn`
-/// in `mod.rs` wraps compilation in a wall-clock timeout and returns it
-/// directly when the caller's cold-start deadline is already spent or runs
-/// out. Every backend owes that, and the conformance suite exercises it with a
-/// zero-length deadline.
-///
-/// What is unreachable is the path *through this function*: an epoch interrupt
-/// during instantiation, classified with `Phase::Spawn`. Instantiation runs no
-/// guest loops and completes in tens of microseconds, far inside any budget the
-/// manifest can express, so `classify` never sees a `Trap::Interrupt` with
-/// `phase == Spawn` in practice. The phase is threaded through anyway so a
-/// component with an expensive start is classified correctly rather than
-/// surprisingly.
-///
 ///
 /// Three outcomes that must not be conflated, because they call for different
 /// responses: the guest asked for more than it was given, the guest ran longer
@@ -236,16 +212,17 @@ pub(super) async fn run(
 /// The order matters. A limiter denial arrives *as* a trap carrying the typed
 /// error, and an epoch interrupt arrives as `Trap::Interrupt`, so both must be
 /// recognised before the fallback claims them as ordinary traps.
-fn classify(error: wasmtime::Error, phase: Phase, budget: &Budget, during: &str) -> Error {
+///
+/// An epoch interrupt is always `runtime.cpu_budget_exceeded`, whether it fires
+/// while instantiating or while handling the request: the budget is the
+/// manifest's `cpu_ms` either way. The caller's spawn and invoke deadlines are
+/// wall-clock timeouts in `mod.rs` and never pass through here.
+fn classify(error: wasmtime::Error, budget: &Budget, during: &str) -> Error {
     // A denial is only ever present on the denial path, so this cannot
     // mis-attribute a guest that handled a failed grow and later trapped for an
     // unrelated reason.
     if let Some(exceeded) = error.downcast_ref::<LimitExceeded>() {
-        return Error::ResourceExhausted {
-            limit: exceeded.limit,
-            requested: exceeded.requested,
-            allowed: exceeded.allowed,
-        };
+        return exceeded.into_error();
     }
 
     // `UpdateDeadline::Interrupt` raises exactly this. Distinguishing "ran too
@@ -254,10 +231,7 @@ fn classify(error: wasmtime::Error, phase: Phase, budget: &Budget, during: &str)
         error.downcast_ref::<wasmtime::Trap>(),
         Some(wasmtime::Trap::Interrupt)
     ) {
-        return Error::DeadlineExceeded {
-            phase,
-            limit: budget.cpu,
-        };
+        return Error::CpuBudgetExceeded { limit: budget.cpu };
     }
 
     // Everything else is the guest's own fault, and its message is the only
@@ -283,35 +257,57 @@ mod tests {
     /// A limiter denial arrives as a trap carrying the typed error, so it must
     /// be recognised before the fallback claims it.
     #[test]
-    fn a_limiter_denial_maps_to_resource_exhausted() {
-        let error = wasmtime::Error::from(LimitExceeded {
-            limit: "memory",
+    fn a_memory_denial_maps_to_memory_limit_exceeded() {
+        let error = wasmtime::Error::from(LimitExceeded::Memory {
             requested: 8,
             allowed: 4,
         });
-        let mapped = classify(error, Phase::Invoke, &budget(), "guest");
-        assert_eq!(mapped.code(), "runtime.resource_exhausted");
+        let mapped = classify(error, &budget(), "guest");
+        assert_eq!(mapped.code(), "runtime.memory_limit_exceeded");
+        assert!(!mapped.retryable());
     }
 
-    /// `UpdateDeadline::Interrupt` raises `Trap::Interrupt`. Both phases map,
-    /// though only the invoke phase reaches `classify` with an interrupt in
-    /// practice — see the note on `classify`. This is about the epoch path only;
-    /// a spawn-phase deadline still fires, via the wall-clock timeout in
-    /// `spawn`, and is a conformance requirement.
+    /// The table cap, driven through the real limiter and then `classify`.
+    ///
+    /// **Not end-to-end.** No guest can drive this: stable Rust cannot grow a
+    /// funcref table from a guest, so the reference fixture has no route that
+    /// reaches the cap. This exercises everything from the limiter's decision
+    /// to the code a caller sees, but not the wasm instruction that would
+    /// trigger it.
     #[test]
-    fn an_epoch_interrupt_maps_to_deadline_exceeded_in_either_phase() {
-        for phase in [Phase::Spawn, Phase::Invoke] {
-            let mapped = classify(
-                wasmtime::Trap::Interrupt.into(),
-                phase,
-                &budget(),
-                "instantiating",
-            );
-            assert_eq!(mapped.code(), "runtime.deadline_exceeded");
-            assert!(
-                matches!(mapped, Error::DeadlineExceeded { phase: p, .. } if p == phase),
-                "the phase must survive the mapping"
-            );
+    fn the_table_cap_maps_to_table_limit_exceeded() {
+        use crate::wasm::limits::{BudgetLimiter, MAX_TABLE_ELEMENTS};
+        use wasmtime::ResourceLimiter;
+
+        let mut limiter = BudgetLimiter::new(&budget());
+        assert!(
+            limiter
+                .table_growing(0, MAX_TABLE_ELEMENTS, None)
+                .expect("at the cap is allowed"),
+            "growing to exactly the cap is permitted"
+        );
+        let denial = limiter
+            .table_growing(0, MAX_TABLE_ELEMENTS + 1, None)
+            .expect_err("one past the cap is denied");
+
+        let mapped = classify(denial, &budget(), "guest");
+        assert_eq!(mapped.code(), "runtime.table_limit_exceeded");
+        assert!(
+            !mapped.retryable(),
+            "a fixed host cap does not move on retry"
+        );
+    }
+
+    /// `UpdateDeadline::Interrupt` raises `Trap::Interrupt`. It is the sealed
+    /// CPU budget wherever it fires, so instantiation and the handler map to the
+    /// same code; the caller's wall-clock deadlines are separate codes raised in
+    /// `mod.rs`.
+    #[test]
+    fn an_epoch_interrupt_maps_to_cpu_budget_exceeded() {
+        for during in ["instantiating", "guest"] {
+            let mapped = classify(wasmtime::Trap::Interrupt.into(), &budget(), during);
+            assert_eq!(mapped.code(), "runtime.cpu_budget_exceeded", "{during}");
+            assert!(!mapped.retryable(), "the same work hits the same budget");
         }
     }
 
@@ -321,7 +317,6 @@ mod tests {
     fn any_other_trap_stays_a_trap() {
         let mapped = classify(
             wasmtime::Trap::UnreachableCodeReached.into(),
-            Phase::Invoke,
             &budget(),
             "guest",
         );

@@ -86,7 +86,7 @@ fn spinning_guests_cannot_starve_the_epoch_ticker() {
     assert_eq!(codes.len(), SPINNERS);
     for code in &codes {
         assert_eq!(
-            code, "runtime.deadline_exceeded",
+            code, "runtime.cpu_budget_exceeded",
             "every spinning guest must be preempted; got {codes:?}"
         );
     }

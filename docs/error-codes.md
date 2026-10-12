@@ -26,7 +26,12 @@ rejected, whichever command surfaced it.
 **Recovery** is a closed set, for callers that branch on a value rather than read
 prose: `retry`, `fix_input`, `fix_permissions`, `rebuild`, `report_bug`. It is
 documentation only — it is deliberately *not* a field in the envelope, because
-adding one is a compatibility change the platform would have to mirror.
+adding one is a compatibility change every caller would have to mirror.
+
+**`retry` means exactly `retryable: true`**, and a test holds the two together:
+the same request, sent again unchanged, can succeed without anyone changing
+anything. It means re-sending the request, never repeating a call on an instance
+that has already failed.
 
 **Reachable** says whether a CLI user can hit the code today, or which issue makes
 it reachable. Codes that are not yet reachable are listed rather than omitted, so
@@ -40,9 +45,9 @@ the table is honest about what is coming.
 | `1` | The command ran and failed. An envelope was written to stderr. |
 | `2` | The command line was not accepted; nothing was attempted. |
 
-Codes do not map to distinct exit statuses. With five reachable codes and nothing
-retryable, a per-code mapping would be a second compatibility surface for no gain;
-`retryable` and the recovery column carry that signal instead.
+Codes do not map to distinct exit statuses. A per-code mapping would be a second
+compatibility surface for no gain; `retryable` and the recovery column carry that
+signal instead.
 
 ## All codes
 
@@ -58,9 +63,13 @@ retryable, a per-code mapping would be a second compatibility surface for no gai
 | [`cli.internal`](#cliinternal) | `report_bug` | yes |
 | [`net.unreachable`](#netunreachable) | `retry` | yes |
 | [`runtime.bundle_not_found`](#runtimebundle_not_found) | `fix_input` | yes |
-| [`runtime.deadline_exceeded`](#runtimedeadline_exceeded) | `retry` | yes |
+| [`runtime.spawn_deadline_exceeded`](#runtimespawn_deadline_exceeded) | `retry` | yes |
+| [`runtime.invoke_deadline_exceeded`](#runtimeinvoke_deadline_exceeded) | `retry` | yes |
+| [`runtime.cpu_budget_exceeded`](#runtimecpu_budget_exceeded) | `fix_input` | yes |
 | [`runtime.stopped`](#runtimestopped) | `retry` | yes |
-| [`runtime.resource_exhausted`](#runtimeresource_exhausted) | `fix_input` | yes |
+| [`runtime.memory_limit_exceeded`](#runtimememory_limit_exceeded) | `fix_input` | yes |
+| [`runtime.response_too_large`](#runtimeresponse_too_large) | `fix_input` | yes |
+| [`runtime.table_limit_exceeded`](#runtimetable_limit_exceeded) | `fix_input` | yes |
 | [`runtime.trap`](#runtimetrap) | `rebuild` | yes |
 | [`runtime.incompatible_interface`](#runtimeincompatible_interface) | `rebuild` | yes |
 | [`runtime.capability_denied`](#runtimecapability_denied) | `fix_input` | yes |
@@ -216,33 +225,73 @@ The app was asked for by its content address, but no stored copy with that addre
 
 *Recovery:* `fix_input` · *Reachable:* yes
 
-### `runtime.deadline_exceeded`
+### `runtime.spawn_deadline_exceeded`
 
-The app ran longer than it was allowed to. The message says whether the limit was hit while the app was starting up or while it was handling a request.
+The app did not finish starting inside the time the host allowed for it. Starting is mostly compiling the app, so a large app or a busy host is the usual cause.
 
-**What to do:** Retrying may work if the app was briefly slow. If it happens every time, the app is doing too much work for its time budget — raise `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild.
+**What to do:** Send the request again — a less busy host may start it in time. If it fails every time, make the app smaller or quicker to start, then rebuild with `clwd build`.
 
-**Hint** (in the envelope): Raise `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild with `clwd build`, or make the request handler do less work.
+**Hint** (in the envelope): Retry the request; if it keeps failing, make the component smaller or quicker to start.
 
 *Recovery:* `retry` · *Reachable:* yes
 
+### `runtime.invoke_deadline_exceeded`
+
+The app was still handling the request when the host's time limit for that request ran out. The limit is wall-clock time, so a busy host or a slow outbound call counts against it, not only the app's own work.
+
+**What to do:** Send the request again. If it fails every time, make the handler finish sooner — do less per request, or move slow work out of the request path.
+
+**Hint** (in the envelope): Retry the request; if it keeps failing, make the handler finish sooner.
+
+*Recovery:* `retry` · *Reachable:* yes
+
+### `runtime.cpu_budget_exceeded`
+
+The app used up the running time its `clwd.toml` grants each request, `capabilities.limits.cpu_ms`. It measures how long the app's code runs, and a busy host's contention counts against it. Sending the same request again does the same work and hits the same limit.
+
+**What to do:** Raise `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild with `clwd build`, or make the handler do less work per request.
+
+**Hint** (in the envelope): Raise `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild with `clwd build`, or make the request handler do less work.
+
+*Recovery:* `fix_input` · *Reachable:* yes
+
 ### `runtime.stopped`
 
-The app was running but is no longer. It exited on its own, crashed, or was reclaimed by the host.
+The app instance that was handling requests is gone, so it can serve nothing more. A crash is reported as `runtime.trap`, not as this.
 
-**What to do:** Start it again. If it stops repeatedly, `clwd logs` will show what the app printed before it went away.
+**What to do:** Send the request again; the host serves it with a fresh instance. Retrying here always means re-sending the request — never calling the same, finished instance again. If it keeps happening, `clwd logs` shows what the app printed before it went away.
 
 **Hint** (in the envelope): Start the app again, and read `clwd logs` for what it printed before it stopped.
 
 *Recovery:* `retry` · *Reachable:* yes
 
-### `runtime.resource_exhausted`
+### `runtime.memory_limit_exceeded`
 
-The app asked for more of a resource — memory, most often — than its manifest allows. The message names the limit and the amount allowed.
+The app tried to use more memory than its `clwd.toml` grants, `capabilities.limits.memory_mb`. The message gives the amount requested and the amount allowed.
 
-**What to do:** Raise the matching limit under `capabilities.limits` in `clwd.toml` and rebuild, or change the app to use less.
+**What to do:** Raise `capabilities.limits.memory_mb` in `clwd.toml` and rebuild with `clwd build`, or change the app to allocate less.
 
-**Hint** (in the envelope): Make the app use less of the resource the message names, or raise `capabilities.limits.memory_mb` in `clwd.toml` when that resource is memory.
+**Hint** (in the envelope): Raise `capabilities.limits.memory_mb` in `clwd.toml` and rebuild with `clwd build`, or make the app allocate less.
+
+*Recovery:* `fix_input` · *Reachable:* yes
+
+### `runtime.response_too_large`
+
+The app returned a response body bigger than the host accepts. The limit is fixed by the host — nothing in `clwd.toml` raises it — and the message gives its value.
+
+**What to do:** Change the app to return a smaller body: page through large results, or return a link to the data instead of the data itself.
+
+**Hint** (in the envelope): Return a smaller response body; the message gives the host's fixed limit.
+
+*Recovery:* `fix_input` · *Reachable:* yes
+
+### `runtime.table_limit_exceeded`
+
+The app grew one of its internal function tables past the host's fixed limit. Nothing in `clwd.toml` raises it. Ordinary apps never come close; reaching it means the app creates function references without bound.
+
+**What to do:** Change the app so it stops creating function references at run time without bound, then rebuild with `clwd build`.
+
+**Hint** (in the envelope): Reduce how many function references the app adds to its tables at run time; the host's limit is fixed.
 
 *Recovery:* `fix_input` · *Reachable:* yes
 

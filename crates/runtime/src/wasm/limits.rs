@@ -35,6 +35,7 @@
 use wasmtime::ResourceLimiter;
 
 use super::budget::Budget;
+use crate::error::Error;
 
 /// Table elements one instance may allocate.
 ///
@@ -45,7 +46,7 @@ use super::budget::Budget;
 /// `wit/world.wit` peaks at **76** table elements serving a request. This is
 /// three orders of magnitude above that, which is headroom for a component
 /// doing real work rather than a cap anyone is expected to approach.
-const MAX_TABLE_ELEMENTS: usize = 100_000;
+pub(super) const MAX_TABLE_ELEMENTS: usize = 100_000;
 
 /// Instances one `Store` may hold. A component instantiates its inner
 /// instances at startup, so this bounds a component that nests without limit.
@@ -66,20 +67,32 @@ const MAX_TABLES: usize = 32;
 const MAX_MEMORIES: usize = 32;
 
 /// The typed denial. Raised as a trap, downcast on the error path.
+///
+/// One variant per limit, because the limits differ in who can raise them:
+/// memory is the manifest's `memory_mb`, the table cap is fixed by the host.
+/// Each maps to its own code.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct LimitExceeded {
-    pub(super) limit: &'static str,
-    pub(super) requested: u64,
-    pub(super) allowed: u64,
+pub(super) enum LimitExceeded {
+    Memory { requested: u64, allowed: u64 },
+    TableElements { requested: u64, allowed: u64 },
+}
+
+impl LimitExceeded {
+    pub(super) fn into_error(self) -> Error {
+        match self {
+            Self::Memory { requested, allowed } => {
+                Error::MemoryLimitExceeded { requested, allowed }
+            }
+            Self::TableElements { requested, allowed } => {
+                Error::TableLimitExceeded { requested, allowed }
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for LimitExceeded {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} limit exceeded: requested {}, limit {}",
-            self.limit, self.requested, self.allowed
-        )
+        self.into_error().fmt(f)
     }
 }
 
@@ -115,8 +128,7 @@ impl ResourceLimiter for BudgetLimiter {
         _maximum: Option<usize>,
     ) -> wasmtime::Result<bool> {
         if desired > self.memory_bytes {
-            return Err(LimitExceeded {
-                limit: "memory",
+            return Err(LimitExceeded::Memory {
                 requested: desired as u64,
                 allowed: self.memory_bytes as u64,
             }
@@ -133,8 +145,7 @@ impl ResourceLimiter for BudgetLimiter {
         _maximum: Option<usize>,
     ) -> wasmtime::Result<bool> {
         if desired > MAX_TABLE_ELEMENTS {
-            return Err(LimitExceeded {
-                limit: "table elements",
+            return Err(LimitExceeded::TableElements {
                 requested: desired as u64,
                 allowed: MAX_TABLE_ELEMENTS as u64,
             }

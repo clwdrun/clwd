@@ -597,19 +597,18 @@ async fn r2_5() {
             .expect_err("a spent spawn deadline must fail the spawn");
         assert_eq!(
             err.code(),
-            "runtime.deadline_exceeded",
+            "runtime.spawn_deadline_exceeded",
             "{}got {err:?}",
             at(&*arm, ID)
         );
         assert!(
-            matches!(
-                err,
-                Error::DeadlineExceeded {
-                    phase: clwd_runtime::Phase::Spawn,
-                    ..
-                }
-            ),
-            "{}deadline fired in the wrong phase: {err:?}",
+            err.retryable(),
+            "{}spawn_deadline_exceeded retryable",
+            at(&*arm, ID)
+        );
+        assert!(
+            matches!(err, Error::SpawnDeadlineExceeded { .. }),
+            "{}the wrong deadline fired: {err:?}",
             at(&*arm, ID)
         );
     }
@@ -633,19 +632,18 @@ async fn r2_6() {
             .expect_err("a spent invoke deadline must fail the invoke");
         assert_eq!(
             err.code(),
-            "runtime.deadline_exceeded",
+            "runtime.invoke_deadline_exceeded",
             "{}got {err:?}",
             at(&*arm, ID)
         );
         assert!(
-            matches!(
-                err,
-                Error::DeadlineExceeded {
-                    phase: clwd_runtime::Phase::Invoke,
-                    ..
-                }
-            ),
-            "{}deadline fired in the wrong phase: {err:?}",
+            err.retryable(),
+            "{}invoke_deadline_exceeded retryable",
+            at(&*arm, ID)
+        );
+        assert!(
+            matches!(err, Error::InvokeDeadlineExceeded { .. }),
+            "{}the wrong deadline fired: {err:?}",
             at(&*arm, ID)
         );
     }
@@ -772,19 +770,18 @@ async fn r4_1() {
             .expect_err("a never-yielding guest must not return");
         assert_eq!(
             err.code(),
-            "runtime.deadline_exceeded",
+            "runtime.cpu_budget_exceeded",
             "{}got {err:?}",
             at(&*arm, ID)
         );
         assert!(
-            matches!(
-                err,
-                Error::DeadlineExceeded {
-                    phase: clwd_runtime::Phase::Invoke,
-                    ..
-                }
-            ),
-            "{}wrong phase: {err:?}",
+            !err.retryable(),
+            "{}cpu_budget_exceeded retryable",
+            at(&*arm, ID)
+        );
+        assert!(
+            matches!(err, Error::CpuBudgetExceeded { .. }),
+            "{}preemption was not the CPU budget: {err:?}",
             at(&*arm, ID)
         );
         assert!(
@@ -818,7 +815,7 @@ async fn r4_2() {
             .expect_err("the sealed budget must stop a spin with no caller deadline");
         assert_eq!(
             err.code(),
-            "runtime.deadline_exceeded",
+            "runtime.cpu_budget_exceeded",
             "{}got {err:?}",
             at(&*arm, ID)
         );
@@ -851,7 +848,7 @@ async fn r4_3() {
             .expect_err("a 200ms wall-clock deadline must end a 10s sleep");
         assert_eq!(
             err.code(),
-            "runtime.deadline_exceeded",
+            "runtime.invoke_deadline_exceeded",
             "{}wall-clock case: got {err:?}",
             at(&*arm, ID)
         );
@@ -871,7 +868,7 @@ async fn r4_3() {
             .expect_err("the 50ms CPU budget must end a spin before a 30s wall clock");
         assert_eq!(
             err.code(),
-            "runtime.deadline_exceeded",
+            "runtime.cpu_budget_exceeded",
             "{}cpu-budget case: got {err:?}",
             at(&*arm, ID)
         );
@@ -898,17 +895,17 @@ async fn r4_4() {
             .expect_err("an unbounded allocation must not succeed");
         assert_eq!(
             err.code(),
-            "runtime.resource_exhausted",
+            "runtime.memory_limit_exceeded",
             "{}got {err:?}",
             at(&*arm, ID)
         );
+        assert!(
+            !err.retryable(),
+            "{}memory_limit_exceeded retryable",
+            at(&*arm, ID)
+        );
         match err {
-            Error::ResourceExhausted {
-                limit,
-                requested,
-                allowed,
-            } => {
-                assert_eq!(limit, "memory", "{}wrong limit name", at(&*arm, ID));
+            Error::MemoryLimitExceeded { requested, allowed } => {
                 assert_eq!(
                     allowed,
                     4 * 1024 * 1024,
@@ -966,7 +963,7 @@ async fn r4_5() {
             .expect_err("hog is preempted");
         assert_eq!(
             hog_err.code(),
-            "runtime.deadline_exceeded",
+            "runtime.cpu_budget_exceeded",
             "{}the hog's CPU-budget preemption was reported as {:?}",
             at(&*arm, ID),
             hog_err.code()
@@ -1024,7 +1021,7 @@ async fn r4_6() {
                 .expect_err("every spinner is preempted");
             assert_eq!(
                 err.code(),
-                "runtime.deadline_exceeded",
+                "runtime.cpu_budget_exceeded",
                 "{}a spinner's preemption was reported as {:?}",
                 at(&*arm, ID),
                 err.code()

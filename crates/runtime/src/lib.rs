@@ -19,7 +19,7 @@ pub use call::{
     AppId, Body, Deadline, InvokeOptions, MAX_RESPONSE_BODY, Request, RequestId, Response,
     SpawnOptions,
 };
-pub use error::{Error, Phase, Result};
+pub use error::{Error, Result};
 pub use handle::{Handle, InstanceId};
 pub use identity::{Caller, IdentityCtx, OrgId, Principal, ServicePrincipal, SubjectId};
 pub use logs::{LogLevel, LogLine, LogStream, LogStreamKind};

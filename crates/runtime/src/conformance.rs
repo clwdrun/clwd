@@ -179,7 +179,7 @@ pub struct InstanceObservation {
 ///
 /// The `summary` is used verbatim in a failing test's message, so a failure
 /// reads as *"wasm does not conform to R4.4: a guest past its memory budget
-/// reports runtime.resource_exhausted…"* rather than as a bare assertion
+/// reports runtime.memory_limit_exceeded…"* rather than as a bare assertion
 /// mismatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -280,12 +280,12 @@ pub const REQUIREMENTS: &[Requirement] = &[
     Requirement {
         id: "R2.5",
         group: "lifecycle",
-        summary: "a spent spawn deadline reports runtime.deadline_exceeded in the spawn phase",
+        summary: "a spent spawn deadline reports runtime.spawn_deadline_exceeded",
     },
     Requirement {
         id: "R2.6",
         group: "lifecycle",
-        summary: "a spent invoke deadline reports runtime.deadline_exceeded in the invoke phase",
+        summary: "a spent invoke deadline reports runtime.invoke_deadline_exceeded",
     },
     // --- fault isolation --------------------------------------------------
     Requirement {
@@ -307,8 +307,7 @@ pub const REQUIREMENTS: &[Requirement] = &[
     Requirement {
         id: "R4.1",
         group: "resource_budgets",
-        summary: "a guest that never yields is preempted with runtime.deadline_exceeded in the \
-                  invoke phase",
+        summary: "a guest that never yields is preempted with runtime.cpu_budget_exceeded",
     },
     Requirement {
         id: "R4.2",
@@ -319,13 +318,13 @@ pub const REQUIREMENTS: &[Requirement] = &[
         id: "R4.3",
         group: "resource_budgets",
         summary: "a caller wall-clock deadline and the sealed CPU budget compose; whichever \
-                  expires first ends the call",
+                  expires first ends the call, and its code says which",
     },
     Requirement {
         id: "R4.4",
         group: "resource_budgets",
-        summary: "a guest past its memory budget reports runtime.resource_exhausted with limit \
-                  \"memory\" and the sealed byte count as allowed",
+        summary: "a guest past its memory budget reports runtime.memory_limit_exceeded with the \
+                  sealed byte count as allowed",
     },
     Requirement {
         id: "R4.5",

@@ -160,19 +160,55 @@ mod tests {
         );
     }
 
+    /// One split code from the deadline family, byte for byte: the code, the
+    /// runtime's own hint, and `retryable` forwarded from the runtime rather
+    /// than hard-coded.
     #[cfg(feature = "run")]
     #[test]
-    fn runtime_error_envelope_bytes() {
+    fn cpu_budget_envelope_bytes() {
         let err = CliError::Runtime {
-            source: clwd_runtime::Error::Stopped {},
+            source: clwd_runtime::Error::CpuBudgetExceeded {
+                limit: std::time::Duration::from_millis(50),
+            },
         };
         assert_eq!(
             render_error(Format::Json, &err),
-            "{\"code\":\"runtime.stopped\",\
-             \"message\":\"the instance is no longer running\",\
-             \"hint\":\"Start the app again, and read `clwd logs` for what it printed before \
-             it stopped.\",\
+            "{\"code\":\"runtime.cpu_budget_exceeded\",\
+             \"message\":\"guest exceeded its CPU budget of 50ms\",\
+             \"hint\":\"Raise `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild with \
+             `clwd build`, or make the request handler do less work.\",\
              \"retryable\":false}\n"
+        );
+    }
+
+    /// The resource family, and a retryable runtime code, so the envelope is
+    /// seen carrying `true`.
+    #[cfg(feature = "run")]
+    #[test]
+    fn retryable_runtime_envelope_bytes() {
+        let err = CliError::Runtime {
+            source: clwd_runtime::Error::ResponseTooLarge { allowed: 16777216 },
+        };
+        assert_eq!(
+            render_error(Format::Json, &err),
+            "{\"code\":\"runtime.response_too_large\",\
+             \"message\":\"response body exceeds the host's fixed limit of 16777216 bytes\",\
+             \"hint\":\"Return a smaller response body; the message gives the host's fixed \
+             limit.\",\
+             \"retryable\":false}\n"
+        );
+        let err = CliError::Runtime {
+            source: clwd_runtime::Error::SpawnDeadlineExceeded {
+                limit: std::time::Duration::from_secs(1),
+            },
+        };
+        assert_eq!(
+            render_error(Format::Json, &err),
+            "{\"code\":\"runtime.spawn_deadline_exceeded\",\
+             \"message\":\"spawn exceeded its deadline of 1s\",\
+             \"hint\":\"Retry the request; if it keeps failing, make the component smaller \
+             or quicker to start.\",\
+             \"retryable\":true}\n"
         );
     }
 

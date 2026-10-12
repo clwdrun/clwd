@@ -113,5 +113,8 @@ serde_json = { workspace = true }
 # Dev-dependencies are excluded from `cargo tree -e normal`, which is what the
 # `cli-deps` gate inspects, so "clwd-cli must not grow a runtime backend" still
 # holds — and clwd-runtime with no features pulls no backend anyway.
-clwd-runtime = { workspace = true }
+#
+# `test-util` adds no dependency; it exposes `clwd_runtime::error::samples()`,
+# which the same test uses to hold the recovery column to `retryable()`.
+clwd-runtime = { workspace = true, features = ["test-util"] }
 clwd-bundle = { workspace = true }
