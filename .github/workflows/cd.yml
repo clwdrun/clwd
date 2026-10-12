@@ -41,6 +41,9 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  # Bump with ci.yml's copy; the digest is of the release's linux-musl archive.
+  CARGO_DENY_VERSION: 0.20.2
+  CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
 
 jobs:
   # A tag is a promise about what the code says. Check it before shipping —
@@ -105,20 +108,75 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "ok: $TAG matches manifest ($TRAIN train)"
 
-  # Never ship something that would not have passed CI.
+  # Never ship something that did not pass CI — by asking CI, not by redoing it.
+  #
+  # This job used to rerun fmt, clippy, tests and deny on the tagged commit:
+  # about 25 minutes to re-derive a result CI had already recorded for that
+  # exact commit. It now checks three things, each fatal on its own:
+  #
+  #   (a) the tagged commit is an ancestor of origin/main, so a tag cannot ship
+  #       a commit that never landed;
+  #   (b) the `ci` workflow succeeded on that exact SHA, queried from the API —
+  #       not a later commit, not the branch;
+  #   (c) a fresh advisories check, the one input that can change after CI ran
+  #       without any commit changing.
+  #
+  # (a) and (b) are evaluated and reported together before failing, so a
+  # refused tag says everything that is wrong with it at once.
   gate:
     needs: verify-tag
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.verify-tag.outputs.tag }}
-      - run: rustup show active-toolchain
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-features -- -D warnings
-      - run: cargo test --workspace
-      - run: cargo install cargo-deny --locked --version ^0.20
-      - run: cargo deny check --hide-inclusion-graph
+          fetch-depth: 0
+
+      - name: the tagged commit is on main, and ci passed on it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          sha=$(git rev-parse HEAD)
+          fail=0
+
+          git fetch --no-tags --quiet origin main
+          if git merge-base --is-ancestor "$sha" origin/main; then
+            echo "ok: (a) $sha is an ancestor of origin/main"
+          else
+            echo "::error::(a) $sha is not an ancestor of origin/main"
+            fail=1
+          fi
+
+          runs=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&status=success" \
+                   --jq '.total_count') || runs="query failed"
+          if [[ "$runs" =~ ^[1-9][0-9]*$ ]]; then
+            echo "ok: (b) $runs successful ci run(s) on $sha"
+          else
+            echo "::error::(b) no successful ci run on $sha (${runs})"
+            fail=1
+          fi
+
+          exit "$fail"
+
+      # Release binary, checksum-verified; the same pin and digest as ci.yml.
+      - name: install cargo-deny
+        run: |
+          set -euo pipefail
+          name="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl -fsSL --retry 3 -o "$name.tar.gz" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/$name.tar.gz"
+          echo "${CARGO_DENY_SHA256}  $name.tar.gz" | sha256sum --check --strict
+          tar -xzf "$name.tar.gz" "$name/cargo-deny"
+          sudo install -m 0755 "$name/cargo-deny" /usr/local/bin/cargo-deny
+          rm -rf "$name" "$name.tar.gz"
+          cargo-deny --version
+
+      - name: (c) advisories, fresh
+        run: cargo deny check --hide-inclusion-graph advisories
 
   # A build check, not a release pipeline. Kept on tag push because knowing a
   # tag still compiles for both targets is worth the minutes; the packaging and

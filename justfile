@@ -220,6 +220,26 @@ wit-check:
 clean:
     cargo clean
 
+# Reclaim disk from stale cargo artifacts without a full `cargo clean`. Touches
+# only cargo target directories, never sources or wip/. Incremental caches and
+# trybuild scratch are regenerated on demand; deps, build-script output and
+# fingerprints untouched for `days` are mostly hashes from older lockfiles.
+# ponytail: mtime is the staleness signal, so an artifact that is still current
+# but unrebuilt for `days` goes too and costs one rebuild; cargo-sweep's
+# stamp-based tracking is the upgrade if that ever bites.
+clean-stale days="14":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for t in target crates/runtime/tests/fixtures/guest/target templates/*/target; do
+        [ -d "$t" ] || continue
+        before=$(du -sh "$t" | cut -f1)
+        find "$t" -type d -name incremental -prune -exec rm -rf {} +
+        rm -rf "$t/tests/trybuild"
+        find "$t" -mindepth 2 \( -path '*/deps/*' -o -path '*/build/*' -o -path '*/.fingerprint/*' \) \
+            -prune -mtime +{{days}} -exec rm -rf {} +
+        echo "$t: $before -> $(du -sh "$t" | cut -f1)"
+    done
+
 # Rebuild the wasm test guest. Its output is committed so CI needs no guest
 # toolchain; run this after changing wit/ or the guest source.
 rebuild-guest:
