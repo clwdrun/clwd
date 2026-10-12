@@ -266,18 +266,10 @@ impl CliError {
     /// envelope's `retryable: true`.
     pub fn retryable(&self) -> bool {
         match self {
-            // `clwd_bundle::Error::retryable` exists and is `false` for its whole
-            // catalogue — a malformed bundle does not become well formed on a
-            // second attempt. `clwd_runtime::Error` exposes no `retryable()` at
-            // all, so there is nothing to forward for the `runtime.*` codes.
-            //
-            // `false` rather than a guess. `runtime.deadline_exceeded` is
-            // arguably retryable, but the crate that owns the code declined to
-            // make that claim, and this crate inventing one on its behalf would
-            // put a compatibility promise in the wrong place. The asymmetry is
-            // deliberate and visible rather than papered over.
+            // Forwarded, not guessed: the crate that owns the code decides
+            // whether it is retryable, per variant, and this one repeats it.
             #[cfg(feature = "run")]
-            Self::Runtime { .. } => false,
+            Self::Runtime { source } => source.retryable(),
             // Forwarded, not guessed. `clwd_bundle::Error` does expose
             // `retryable()`, so the crate that owns the code makes the claim and
             // this one repeats it. If a `bundle.*` code ever becomes retryable,

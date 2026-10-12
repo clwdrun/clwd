@@ -12,8 +12,8 @@ use clwd_runtime::wasm::{
     AppIdRequired, MemoryAppDataStore, MemoryBundleStore, MemorySecretStore, WasmSandbox,
 };
 use clwd_runtime::{
-    AppId, Deadline, Error, InvokeOptions, LogStreamKind, MAX_RESPONSE_BODY, Phase, RequestId,
-    Sandbox, SpawnOptions,
+    AppId, Deadline, Error, InvokeOptions, LogStreamKind, MAX_RESPONSE_BODY, RequestId, Sandbox,
+    SpawnOptions,
 };
 use futures_core::Stream;
 
@@ -128,12 +128,15 @@ async fn a_response_body_past_the_cap_is_refused() {
     assert!(
         matches!(
             err,
-            Error::ResourceExhausted {
-                limit: "response body",
-                ..
-            }
+            Error::ResponseTooLarge { allowed } if allowed == MAX_RESPONSE_BODY as u64
         ),
         "{err:?}"
+    );
+    assert_eq!(err.code(), "runtime.response_too_large");
+    assert!(!err.retryable(), "the same body hits the same fixed cap");
+    assert!(
+        err.to_string().contains(&MAX_RESPONSE_BODY.to_string()),
+        "the message carries the cap, so the hint does not have to: {err}"
     );
 }
 
@@ -206,15 +209,10 @@ async fn a_spawn_deadline_reports_the_spawn_phase() {
         .await
         .expect_err("cold start is out of budget");
 
-    assert_eq!(error.code(), "runtime.deadline_exceeded");
+    assert_eq!(error.code(), "runtime.spawn_deadline_exceeded");
+    assert!(error.retryable(), "spawn_deadline_exceeded retryable");
     assert!(
-        matches!(
-            error,
-            Error::DeadlineExceeded {
-                phase: Phase::Spawn,
-                ..
-            }
-        ),
+        matches!(error, Error::SpawnDeadlineExceeded { .. }),
         "got {error:?}"
     );
 }
@@ -235,15 +233,10 @@ async fn an_invoke_deadline_reports_the_invoke_phase() {
         .await
         .expect_err("the invocation is out of budget");
 
-    assert_eq!(error.code(), "runtime.deadline_exceeded");
+    assert_eq!(error.code(), "runtime.invoke_deadline_exceeded");
+    assert!(error.retryable(), "invoke_deadline_exceeded retryable");
     assert!(
-        matches!(
-            error,
-            Error::DeadlineExceeded {
-                phase: Phase::Invoke,
-                ..
-            }
-        ),
+        matches!(error, Error::InvokeDeadlineExceeded { .. }),
         "got {error:?}"
     );
 }

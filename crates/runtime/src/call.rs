@@ -54,7 +54,7 @@ pub type Response = http::Response<Body>;
 ///
 /// Responses are buffered, so without a cap a guest decides how much host
 /// memory one request takes. A body past this fails the invocation with
-/// `runtime.resource_exhausted` rather than being truncated: a cut-off body
+/// `runtime.response_too_large` rather than being truncated: a cut-off body
 /// served as complete is worse than an error.
 pub const MAX_RESPONSE_BODY: usize = 16 * 1024 * 1024;
 

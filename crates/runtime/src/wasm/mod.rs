@@ -56,7 +56,7 @@ use std::sync::Arc;
 
 use crate::Sandbox;
 use crate::call::{InvokeOptions, Request, Response, SpawnOptions};
-use crate::error::{Error, Phase, Result};
+use crate::error::{Error, Result};
 use crate::handle::{Handle, InstanceId};
 use crate::identity::IdentityCtx;
 use crate::logs::LogStream;
@@ -279,8 +279,7 @@ impl Sandbox for WasmSandbox {
         let deadline = opts.deadline;
         let (bytes, budget, declared_secrets, egress, storage) = self.entrypoint(&bundle).await?;
 
-        let expired = || Error::DeadlineExceeded {
-            phase: Phase::Spawn,
+        let expired = || Error::SpawnDeadlineExceeded {
             limit: std::time::Duration::ZERO,
         };
         if deadline.is_some_and(|d| d.is_expired()) {
@@ -292,8 +291,7 @@ impl Sandbox for WasmSandbox {
         match deadline {
             Some(d) => tokio::time::timeout(d.remaining(), compile)
                 .await
-                .map_err(|_| Error::DeadlineExceeded {
-                    phase: Phase::Spawn,
+                .map_err(|_| Error::SpawnDeadlineExceeded {
                     limit: d.remaining(),
                 })??,
             None => compile.await?,
@@ -353,8 +351,7 @@ impl Sandbox for WasmSandbox {
         // before checking the clock, so a fast guest completes and wins the
         // race against a deadline that had already passed.
         if opts.deadline.is_some_and(|d| d.is_expired()) {
-            return Err(Error::DeadlineExceeded {
-                phase: Phase::Invoke,
+            return Err(Error::InvokeDeadlineExceeded {
                 limit: std::time::Duration::ZERO,
             });
         }
@@ -391,8 +388,7 @@ impl Sandbox for WasmSandbox {
         match opts.deadline {
             Some(d) => tokio::time::timeout(d.remaining(), call)
                 .await
-                .map_err(|_| Error::DeadlineExceeded {
-                    phase: Phase::Invoke,
+                .map_err(|_| Error::InvokeDeadlineExceeded {
                     limit: d.remaining(),
                 })?,
             None => call.await,

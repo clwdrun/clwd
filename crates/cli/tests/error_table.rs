@@ -60,17 +60,19 @@ use clap::CommandFactory;
 
 /// What a caller should *do*, as a value rather than prose.
 ///
-/// `retryable: bool` in the envelope is binary and currently uniformly false,
-/// so it gives an agent no signal. This is the richer axis.
+/// `retryable: bool` in the envelope is binary: it says whether to send the
+/// same request again, not what to change otherwise. This is the richer axis,
+/// and `Retry` here is exactly `retryable: true` there —
+/// `recovery_agrees_with_retryable` holds the two together.
 ///
 /// **Table only, deliberately not in the envelope.** Adding a field to the wire
-/// format is a compatibility change `platform#2` would have to mirror, and that
+/// format is a compatibility change every caller would have to mirror, and that
 /// deserves its own decision rather than arriving as a side effect of writing
 /// documentation. If these categories prove out in practice, promoting one into
 /// the envelope later is additive and breaks nobody.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Recovery {
-    /// Transient. The same command may succeed unchanged.
+    /// Transient. The same request, sent again unchanged, may succeed.
     Retry,
     /// The command line, a file, or a manifest value is wrong. Change it.
     FixInput,
@@ -259,29 +261,69 @@ const TABLE: &[Row] = &[
         action: Recovery::FixInput,
     },
     Row {
-        code: "runtime.deadline_exceeded",
-        meaning: "The app ran longer than it was allowed to. The message says whether the \
-                  limit was hit while the app was starting up or while it was handling a \
-                  request.",
-        recovery: "Retrying may work if the app was briefly slow. If it happens every \
-                   time, the app is doing too much work for its time budget — raise \
-                   `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild.",
+        code: "runtime.spawn_deadline_exceeded",
+        meaning: "The app did not finish starting inside the time the host allowed for it. \
+                  Starting is mostly compiling the app, so a large app or a busy host is the \
+                  usual cause.",
+        recovery: "Send the request again — a less busy host may start it in time. If it \
+                   fails every time, make the app smaller or quicker to start, then rebuild \
+                   with `clwd build`.",
         action: Recovery::Retry,
+    },
+    Row {
+        code: "runtime.invoke_deadline_exceeded",
+        meaning: "The app was still handling the request when the host's time limit for that \
+                  request ran out. The limit is wall-clock time, so a busy host or a slow \
+                  outbound call counts against it, not only the app's own work.",
+        recovery: "Send the request again. If it fails every time, make the handler finish \
+                   sooner — do less per request, or move slow work out of the request path.",
+        action: Recovery::Retry,
+    },
+    Row {
+        code: "runtime.cpu_budget_exceeded",
+        meaning: "The app used up the running time its `clwd.toml` grants each request, \
+                  `capabilities.limits.cpu_ms`. It measures how long the app's code runs, and \
+                  a busy host's contention counts against it. Sending the same request again \
+                  does the same work and hits the same limit.",
+        recovery: "Raise `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild with `clwd \
+                   build`, or make the handler do less work per request.",
+        action: Recovery::FixInput,
     },
     Row {
         code: "runtime.stopped",
-        meaning: "The app was running but is no longer. It exited on its own, crashed, or \
-                  was reclaimed by the host.",
-        recovery: "Start it again. If it stops repeatedly, `clwd logs` will show what the \
-                   app printed before it went away.",
+        meaning: "The app instance that was handling requests is gone, so it can serve \
+                  nothing more. A crash is reported as `runtime.trap`, not as this.",
+        recovery: "Send the request again; the host serves it with a fresh instance. Retrying \
+                   here always means re-sending the request — never calling the same, finished \
+                   instance again. If it keeps happening, `clwd logs` shows what the app printed \
+                   before it went away.",
         action: Recovery::Retry,
     },
     Row {
-        code: "runtime.resource_exhausted",
-        meaning: "The app asked for more of a resource — memory, most often — than its \
-                  manifest allows. The message names the limit and the amount allowed.",
-        recovery: "Raise the matching limit under `capabilities.limits` in `clwd.toml` and \
-                   rebuild, or change the app to use less.",
+        code: "runtime.memory_limit_exceeded",
+        meaning: "The app tried to use more memory than its `clwd.toml` grants, \
+                  `capabilities.limits.memory_mb`. The message gives the amount requested and \
+                  the amount allowed.",
+        recovery: "Raise `capabilities.limits.memory_mb` in `clwd.toml` and rebuild with `clwd \
+                   build`, or change the app to allocate less.",
+        action: Recovery::FixInput,
+    },
+    Row {
+        code: "runtime.response_too_large",
+        meaning: "The app returned a response body bigger than the host accepts. The limit is \
+                  fixed by the host — nothing in `clwd.toml` raises it — and the message gives \
+                  its value.",
+        recovery: "Change the app to return a smaller body: page through large results, or \
+                   return a link to the data instead of the data itself.",
+        action: Recovery::FixInput,
+    },
+    Row {
+        code: "runtime.table_limit_exceeded",
+        meaning: "The app grew one of its internal function tables past the host's fixed \
+                  limit. Nothing in `clwd.toml` raises it. Ordinary apps never come close; \
+                  reaching it means the app creates function references without bound.",
+        recovery: "Change the app so it stops creating function references at run time \
+                   without bound, then rebuild with `clwd build`.",
         action: Recovery::FixInput,
     },
     Row {
@@ -679,7 +721,11 @@ fn render() -> String {
          **Recovery** is a closed set, for callers that branch on a value rather than read\n\
          prose: `retry`, `fix_input`, `fix_permissions`, `rebuild`, `report_bug`. It is\n\
          documentation only — it is deliberately *not* a field in the envelope, because\n\
-         adding one is a compatibility change the platform would have to mirror.\n\n\
+         adding one is a compatibility change every caller would have to mirror.\n\n\
+         **`retry` means exactly `retryable: true`**, and a test holds the two together:\n\
+         the same request, sent again unchanged, can succeed without anyone changing\n\
+         anything. It means re-sending the request, never repeating a call on an instance\n\
+         that has already failed.\n\n\
          **Reachable** says whether a CLI user can hit the code today, or which issue makes\n\
          it reachable. Codes that are not yet reachable are listed rather than omitted, so\n\
          the table is honest about what is coming.\n\n\
@@ -689,9 +735,9 @@ fn render() -> String {
          | `0` | The command succeeded. |\n\
          | `1` | The command ran and failed. An envelope was written to stderr. |\n\
          | `2` | The command line was not accepted; nothing was attempted. |\n\n\
-         Codes do not map to distinct exit statuses. With five reachable codes and nothing\n\
-         retryable, a per-code mapping would be a second compatibility surface for no gain;\n\
-         `retryable` and the recovery column carry that signal instead.\n\n\
+         Codes do not map to distinct exit statuses. A per-code mapping would be a second\n\
+         compatibility surface for no gain; `retryable` and the recovery column carry that\n\
+         signal instead.\n\n\
          ## All codes\n\n\
          | Code | Recovery | Reachable |\n\
          | --- | --- | --- |\n",
@@ -905,6 +951,113 @@ fn hints_name_only_real_commands_and_keys() {
     }
     // The parser finding nothing would pass vacuously.
     assert!(checked > 40, "only {checked} names found across every hint");
+}
+
+/// A hint speaks to the app's author, or the agent acting for them — never to a
+/// host embedding the runtime. A Rust type name in a hint (`SpawnOptions`,
+/// `InvokeError`) is advice for the wrong reader.
+#[test]
+fn hints_name_no_rust_types() {
+    for (code, hint) in all_hints() {
+        for word in hint.split(|c: char| !c.is_ascii_alphanumeric()) {
+            let camel = word.starts_with(|c: char| c.is_ascii_uppercase())
+                && word[1..].contains(|c: char| c.is_ascii_uppercase());
+            assert!(
+                !(camel && (word.ends_with("Options") || word.ends_with("Error"))),
+                "{code}: the hint names the Rust type `{word}`; say what the app author \
+                 should do instead: {hint:?}"
+            );
+        }
+    }
+}
+
+/// The recovery column says `retry` exactly when the envelope says
+/// `retryable: true` — for every code, through the CLI as well as at the source.
+///
+/// The two used to disagree: the table called `runtime.deadline_exceeded`
+/// retryable while the CLI hard-coded `false` for every runtime code, because
+/// the runtime had no `retryable()` to forward. Nothing compared them.
+#[test]
+fn recovery_agrees_with_retryable() {
+    let action: BTreeMap<&str, Recovery> = TABLE.iter().map(|r| (r.code, r.action)).collect();
+    let says_retry = |code: &str| action[code] == Recovery::Retry;
+
+    // runtime.* — every variant, checked at the source and in the envelope.
+    let samples = clwd_runtime::error::samples();
+    let covered: BTreeSet<&str> = samples.iter().map(|e| e.code()).collect();
+    let owned: BTreeSet<&str> = clwd_runtime::error::OWNED_CODES.iter().copied().collect();
+    assert_eq!(
+        covered, owned,
+        "`clwd_runtime::error::samples()` misses a variant"
+    );
+    for source in samples {
+        let code = source.code();
+        assert_eq!(
+            source.retryable(),
+            says_retry(code),
+            "{code}: the runtime says retryable = {}, the table's recovery is {:?}",
+            source.retryable(),
+            action[code]
+        );
+        let envelope = clwd_cli::CliError::Runtime { source };
+        assert_eq!(
+            envelope.retryable(),
+            says_retry(code),
+            "{code}: the CLI envelope says retryable = {}, the table's recovery is {:?}",
+            envelope.retryable(),
+            action[code]
+        );
+    }
+
+    // bundle.* — §9 of the spec: a malformed bundle never becomes well formed on
+    // a second attempt, and `clwd_bundle`'s own tests hold every variant to it.
+    for code in clwd_bundle::error::CODES {
+        assert!(
+            !says_retry(code),
+            "{code}: the table says retry, but no bundle code is retryable"
+        );
+    }
+
+    // cli.* and net.* — every owned variant, constructed here. `net.unreachable`
+    // takes its flag from the transport, so the table's `retry` must match the
+    // case where the transport allows one.
+    use clwd_cli::CliError;
+    let cli = [
+        CliError::InvalidArgument { what: "x".into() },
+        CliError::NotFound { what: "x".into() },
+        CliError::NotImplemented { command: "x" },
+        CliError::Config { what: "x".into() },
+        CliError::ManifestInvalid { what: "x".into() },
+        CliError::ToolchainMissing {
+            tool: "x",
+            install: "x",
+            cause: "x".into(),
+        },
+        CliError::BuildFailed {
+            step: "x",
+            detail: "x".into(),
+        },
+        CliError::Net {
+            detail: "x".into(),
+            retryable: true,
+        },
+        CliError::Internal {
+            source: anyhow::anyhow!("x"),
+        },
+    ];
+    let covered: BTreeSet<&str> = cli.iter().map(CliError::code).collect();
+    let owned: BTreeSet<&str> = clwd_cli::error::CODES.iter().copied().collect();
+    assert_eq!(covered, owned, "a CLI variant is missing from this test");
+    for err in &cli {
+        assert_eq!(
+            err.retryable(),
+            says_retry(err.code()),
+            "{}: retryable = {}, the table's recovery is {:?}",
+            err.code(),
+            err.retryable(),
+            action[err.code()]
+        );
+    }
 }
 
 /// The parser above, on the shapes it has to tell apart.

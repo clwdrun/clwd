@@ -47,6 +47,13 @@ use clwd_bundle::BundleRef;
 /// is a string literal rather than a format string, so it cannot carry error
 /// data: a trap message or a denied host is untrusted, and belongs in the
 /// message rather than in the recovery text.
+///
+/// # Retryability is per variant
+///
+/// `retry: true` means the **same request**, sent again unchanged, can succeed
+/// on a later attempt without anyone changing anything. Spelled on every owned
+/// variant, so a new one cannot ship without the decision, and there is no
+/// default arm to inherit one from.
 macro_rules! define_error {
     (
         // Braced so the two repetitions are bounded: without a delimiter the
@@ -60,7 +67,7 @@ macro_rules! define_error {
         owned {
             $(
                 $(#[$oattr:meta])*
-                $ovariant:ident { $($ofield:tt)* } => $ocode:literal, $ohint:literal;
+                $ovariant:ident { $($ofield:tt)* } => $ocode:literal, retry: $oretry:literal, $ohint:literal;
             )*
         }
     ) => {
@@ -91,6 +98,15 @@ macro_rules! define_error {
                     $( Self::$ovariant { .. } => $ohint, )*
                 }
             }
+
+            /// Whether the same request, sent again unchanged, can succeed on a
+            /// later attempt. A delegating variant forwards its source's answer.
+            pub fn retryable(&self) -> bool {
+                match self {
+                    $( Self::$dvariant { source } => source.retryable(), )*
+                    $( Self::$ovariant { .. } => $oretry, )*
+                }
+            }
         }
 
         /// Every code this crate owns, generated from the same input as the
@@ -103,6 +119,10 @@ macro_rules! define_error {
         /// as [`Error::hint`]. Public because the error-code table is built
         /// from it.
         pub const OWNED_HINTS: &[(&str, &str)] = &[$(($ocode, $ohint)),*];
+
+        /// Every owned code paired with whether it is retryable, generated from
+        /// the same input as [`Error::retryable`].
+        pub const OWNED_RETRYABLE: &[(&str, bool)] = &[$(($ocode, $oretry)),*];
     };
 }
 
@@ -119,37 +139,76 @@ define_error! {
         ///
         /// Distinct from [`Error::Bundle`]: the bundle is absent, not invalid.
         #[error("no bundle stored under {bundle}")]
-        BundleNotFound { bundle: BundleRef } => "runtime.bundle_not_found",
+        BundleNotFound { bundle: BundleRef } => "runtime.bundle_not_found", retry: false,
             "Publish the app with `clwd publish`, or pass the digest from the `clwd build` you meant to run.";
 
-        /// A deadline expired. `phase` says which budget: cold start and
-        /// invocation are separate, and #17 must be able to blow one without
-        /// blaming the other.
-        #[error("{phase} exceeded its deadline of {limit:?}")]
-        DeadlineExceeded { phase: Phase, limit: Duration } => "runtime.deadline_exceeded",
+        /// The caller's cold-start deadline (`SpawnOptions::deadline`) was
+        /// already spent, or compilation outlasted it.
+        ///
+        /// Retryable: the deadline is the caller's and covers host load, so a
+        /// later attempt can start inside it. A component that always compiles
+        /// slower than the deadline is the exception, because a timed-out
+        /// compilation is not kept.
+        #[error("spawn exceeded its deadline of {limit:?}")]
+        SpawnDeadlineExceeded { limit: Duration } => "runtime.spawn_deadline_exceeded", retry: true,
+            "Retry the request; if it keeps failing, make the component smaller or quicker to start.";
+
+        /// The caller's wall-clock deadline for one request
+        /// (`InvokeOptions::deadline`) was already spent, or the call outlasted
+        /// it.
+        ///
+        /// Distinct from [`Error::CpuBudgetExceeded`]: this is the caller's
+        /// limit, measured in wall time, and includes host load and the guest's
+        /// outbound calls; that one is the app's own sealed budget.
+        #[error("invoke exceeded its deadline of {limit:?}")]
+        InvokeDeadlineExceeded { limit: Duration } => "runtime.invoke_deadline_exceeded", retry: true,
+            "Retry the request; if it keeps failing, make the handler finish sooner.";
+
+        /// The guest spent its sealed `capabilities.limits.cpu_ms` budget.
+        ///
+        /// Enforced with epoch ticks, which advance in wall time while the guest
+        /// runs, so it measures guest running time, host contention included.
+        /// Not retryable: the same work hits the same limit.
+        #[error("guest exceeded its CPU budget of {limit:?}")]
+        CpuBudgetExceeded { limit: Duration } => "runtime.cpu_budget_exceeded", retry: false,
             "Raise `capabilities.limits.cpu_ms` in `clwd.toml` and rebuild with `clwd build`, or make the request handler do less work.";
 
-        /// The instance is gone — it crashed, was reclaimed, or its guest
-        /// exited.
+        /// The instance is gone, so this handle can serve nothing more.
         ///
         /// This is never use-after-stop: `stop` consumes the `Handle`, so that
-        /// is a compile error rather than a runtime one.
+        /// is a compile error rather than a runtime one. A crashing guest is
+        /// [`Error::Trap`], not this.
+        ///
+        /// Retryable means re-sending the *request*, which a host serves with a
+        /// fresh instance — never invoking the same handle again, which will
+        /// keep failing.
         #[error("the instance is no longer running")]
-        Stopped {} => "runtime.stopped",
+        Stopped {} => "runtime.stopped", retry: true,
             "Start the app again, and read `clwd logs` for what it printed before it stopped.";
 
-        /// The guest asked for more of a resource than its manifest sealed.
+        /// The guest tried to grow its memory past the
+        /// `capabilities.limits.memory_mb` its manifest sealed.
         ///
         /// Distinct from [`Error::Trap`] on purpose: a guest that exceeded its
         /// budget and a guest with a bug are different failures, and an
         /// operator reading a log needs to tell them apart.
-        #[error("guest exceeded its {limit} budget: requested {requested}, limit {allowed}")]
-        ResourceExhausted {
-            limit: &'static str,
-            requested: u64,
-            allowed: u64,
-        } => "runtime.resource_exhausted",
-            "Make the app use less of the resource the message names, or raise `capabilities.limits.memory_mb` in `clwd.toml` when that resource is memory.";
+        #[error("guest exceeded its memory budget: requested {requested} bytes, limit {allowed}")]
+        MemoryLimitExceeded { requested: u64, allowed: u64 } => "runtime.memory_limit_exceeded", retry: false,
+            "Raise `capabilities.limits.memory_mb` in `clwd.toml` and rebuild with `clwd build`, or make the app allocate less.";
+
+        /// The guest's response body passed the host's fixed size cap. Nothing
+        /// in the manifest raises it, which is why it is not
+        /// [`Error::MemoryLimitExceeded`]. The cap is in the message, not the
+        /// hint, so the hint cannot go stale if it changes.
+        #[error("response body exceeds the host's fixed limit of {allowed} bytes")]
+        ResponseTooLarge { allowed: u64 } => "runtime.response_too_large", retry: false,
+            "Return a smaller response body; the message gives the host's fixed limit.";
+
+        /// The guest grew a table past the host's fixed element cap. Nothing in
+        /// the manifest raises it.
+        #[error("guest exceeded the host's fixed table limit: requested {requested} elements, limit {allowed}")]
+        TableLimitExceeded { requested: u64, allowed: u64 } => "runtime.table_limit_exceeded", retry: false,
+            "Reduce how many function references the app adds to its tables at run time; the host's limit is fixed.";
 
         /// The guest trapped: an unreachable, a failed assertion, a panic in
         /// guest code, or an epoch/fuel interruption.
@@ -158,7 +217,7 @@ define_error! {
         /// an app author gets — summarizing it here would discard the one thing
         /// that makes the failure actionable.
         #[error("guest trapped: {message}")]
-        Trap { message: String } => "runtime.trap",
+        Trap { message: String } => "runtime.trap", retry: false,
             "Fix the failure the message reports in the app's code, then rebuild with `clwd build`.";
 
         /// A guest was refused a capability its manifest did not grant: an
@@ -172,7 +231,7 @@ define_error! {
         /// probe which host or namespace it was blocked from — see the module
         /// docs in `wasm/capability.rs`.
         #[error("capability denied: {detail}")]
-        CapabilityDenied { detail: String } => "runtime.capability_denied",
+        CapabilityDenied { detail: String } => "runtime.capability_denied", retry: false,
             "Add the denied host to `capabilities.egress` or a namespace to `capabilities.storage_namespaces` in `clwd.toml`, then rebuild with `clwd build`.";
 
         /// The component imports a first-party interface at a version this
@@ -184,7 +243,7 @@ define_error! {
             "the component imports {import}, which this runtime does not provide; \
              rebuild it against the current clwd-sdk"
         )]
-        IncompatibleInterface { import: String } => "runtime.incompatible_interface",
+        IncompatibleInterface { import: String } => "runtime.incompatible_interface", retry: false,
             "Update the app's `clwd-sdk` dependency to the current version and rebuild with `clwd build`.";
 
         /// Last resort only, never where a specific variant fits. A boxed
@@ -194,24 +253,8 @@ define_error! {
         Internal {
             #[source]
             source: Box<dyn std::error::Error + Send + Sync>,
-        } => "runtime.internal",
+        } => "runtime.internal", retry: false,
             "Report this at https://github.com/clwdrun/clwd/issues with the command that produced it.";
-    }
-}
-
-/// Which budget a deadline belonged to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Phase {
-    Spawn,
-    Invoke,
-}
-
-impl std::fmt::Display for Phase {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Spawn => "spawn",
-            Self::Invoke => "invoke",
-        })
     }
 }
 
@@ -223,43 +266,57 @@ impl From<clwd_bundle::Error> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// One sample per owned variant, written by hand. `OWNED_CODES` is generated
+/// from the enum, so adding a variant and forgetting it here fails
+/// `owned_codes_are_exhaustive_over_variants`.
+///
+/// Public under `test-util` so callers' tests can check every runtime code —
+/// the published error table holds its recovery column to `retryable()` with
+/// it.
+#[cfg(any(test, feature = "test-util"))]
+pub fn samples() -> Vec<Error> {
+    vec![
+        Error::BundleNotFound {
+            bundle: BundleRef::of_stream(b""),
+        },
+        Error::SpawnDeadlineExceeded {
+            limit: Duration::from_secs(1),
+        },
+        Error::InvokeDeadlineExceeded {
+            limit: Duration::from_secs(1),
+        },
+        Error::CpuBudgetExceeded {
+            limit: Duration::from_millis(50),
+        },
+        Error::Stopped {},
+        Error::MemoryLimitExceeded {
+            requested: 2,
+            allowed: 1,
+        },
+        Error::ResponseTooLarge { allowed: 16 },
+        Error::TableLimitExceeded {
+            requested: 2,
+            allowed: 1,
+        },
+        Error::Trap {
+            message: "unreachable".into(),
+        },
+        Error::CapabilityDenied {
+            detail: "egress to \"x\" is not in the manifest allowlist".into(),
+        },
+        Error::IncompatibleInterface {
+            import: "clwd:identity/context@0.1.0".into(),
+        },
+        Error::Internal {
+            source: "boom".into(),
+        },
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
-
-    /// One sample per owned variant, written by hand. `OWNED_CODES` is
-    /// generated from the enum, so adding a variant and forgetting it here
-    /// fails the exhaustiveness test below.
-    fn owned_samples() -> Vec<Error> {
-        vec![
-            Error::BundleNotFound {
-                bundle: BundleRef::of_stream(b""),
-            },
-            Error::DeadlineExceeded {
-                phase: Phase::Spawn,
-                limit: Duration::from_secs(1),
-            },
-            Error::Stopped {},
-            Error::Trap {
-                message: "unreachable".into(),
-            },
-            Error::CapabilityDenied {
-                detail: "egress to \"x\" is not in the manifest allowlist".into(),
-            },
-            Error::ResourceExhausted {
-                limit: "memory",
-                requested: 2,
-                allowed: 1,
-            },
-            Error::IncompatibleInterface {
-                import: "clwd:identity/context@0.1.0".into(),
-            },
-            Error::Internal {
-                source: "boom".into(),
-            },
-        ]
-    }
 
     #[test]
     fn owned_codes_are_unique() {
@@ -269,11 +326,11 @@ mod tests {
 
     #[test]
     fn owned_codes_are_exhaustive_over_variants() {
-        let produced: BTreeSet<&str> = owned_samples().iter().map(Error::code).collect();
+        let produced: BTreeSet<&str> = samples().iter().map(Error::code).collect();
         let declared: BTreeSet<&str> = OWNED_CODES.iter().copied().collect();
         assert_eq!(
             produced, declared,
-            "a variant is missing from `owned_samples()` or from the enum"
+            "a variant is missing from `samples()` or from the enum"
         );
     }
 
@@ -293,7 +350,7 @@ mod tests {
     fn hint_agrees_with_the_catalogue() {
         let catalogue: std::collections::BTreeMap<&str, &str> =
             OWNED_HINTS.iter().copied().collect();
-        for err in owned_samples() {
+        for err in samples() {
             assert_eq!(err.hint(), catalogue[err.code()], "{}", err.code());
         }
         let bundle = Error::from(clwd_bundle::Error::ManifestMissing {});
@@ -301,6 +358,27 @@ mod tests {
             bundle.hint(),
             clwd_bundle::Error::ManifestMissing {}.hint(),
             "a delegating variant forwards its source's hint"
+        );
+    }
+
+    /// `retryable()` returns what the catalogue publishes, for every variant,
+    /// and the delegating variant forwards its source's answer.
+    #[test]
+    fn retryable_agrees_with_the_catalogue() {
+        let catalogue: std::collections::BTreeMap<&str, bool> =
+            OWNED_RETRYABLE.iter().copied().collect();
+        assert_eq!(
+            catalogue.len(),
+            OWNED_CODES.len(),
+            "OWNED_RETRYABLE is incomplete"
+        );
+        for err in samples() {
+            assert_eq!(err.retryable(), catalogue[err.code()], "{}", err.code());
+        }
+        let bundle = Error::from(clwd_bundle::Error::ManifestMissing {});
+        assert_eq!(
+            bundle.retryable(),
+            clwd_bundle::Error::ManifestMissing {}.retryable()
         );
     }
 

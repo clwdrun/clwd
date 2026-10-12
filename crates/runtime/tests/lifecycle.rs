@@ -115,15 +115,9 @@ async fn a_spawn_deadline_is_reported_as_the_spawn_phase() {
         .await
         .expect_err("cold start overruns");
 
-    assert_eq!(error.code(), "runtime.deadline_exceeded");
+    assert_eq!(error.code(), "runtime.spawn_deadline_exceeded");
     assert!(
-        matches!(
-            error,
-            Error::DeadlineExceeded {
-                phase: clwd_runtime::Phase::Spawn,
-                ..
-            }
-        ),
+        matches!(error, Error::SpawnDeadlineExceeded { .. }),
         "got {error:?}"
     );
 }
@@ -150,15 +144,9 @@ async fn an_invoke_deadline_is_reported_as_the_invoke_phase() {
         .await
         .expect_err("the invocation overruns");
 
-    assert_eq!(error.code(), "runtime.deadline_exceeded");
+    assert_eq!(error.code(), "runtime.invoke_deadline_exceeded");
     assert!(
-        matches!(
-            error,
-            Error::DeadlineExceeded {
-                phase: clwd_runtime::Phase::Invoke,
-                ..
-            }
-        ),
+        matches!(error, Error::InvokeDeadlineExceeded { .. }),
         "got {error:?}"
     );
 }
