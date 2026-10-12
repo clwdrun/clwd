@@ -22,6 +22,11 @@ env:
   # checksums file and confirmed against the downloaded archive.
   GITLEAKS_VERSION: 8.30.1
   GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+  # Same rule: the digest is of
+  # cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl.tar.gz, from the
+  # release's own .sha256 file and confirmed against the downloaded archive.
+  CARGO_DENY_VERSION: 0.20.2
+  CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
 
 jobs:
   # Mirrors `just check`. If these two drift, the gate is a lie.
@@ -81,17 +86,19 @@ jobs:
       # whose selling point is auditability.
       - run: rustup show active-toolchain
 
-      - uses: actions/cache@v4
+      # An exact-key cache missed on every lockfile change, so any dependency
+      # bump rebuilt the whole tree cold in every job. rust-cache falls back to
+      # the newest cache for the same job and toolchain when the lockfile
+      # differs, and prunes artifacts the current lockfile no longer uses before
+      # saving, so a restored cache does not grow without limit. The rustc
+      # version is part of its key, so a toolchain pin bump still starts clean.
+      #
+      # Saved from `main` only. A pull request restores `main`'s cache and
+      # leaves it alone: per-PR copies of a 1 GB target filled the repository's
+      # cache quota and evicted the ones every run depends on.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            ~/.cargo/bin
-            target
-          # Toolchain file in the key: a pin bump must invalidate rather than
-          # resurrect artifacts built by the old compiler.
-          key: ${{ runner.os }}-gate-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: fmt
         run: cargo fmt --all --check
@@ -157,16 +164,19 @@ jobs:
       - name: trait surface builds with no backend
         run: cargo check -p clwd-runtime --no-default-features
 
-      # `~/.cargo/bin` is in the cache, so on a warm cache the binary is already
-      # there and a plain `cargo install` fails with "binary already exists".
-      # That stayed hidden while every pull request added a dependency and so
-      # got a fresh cache key; the first one that leaves Cargo.lock alone
-      # restores main's cache and hits it. Reuse what the cache gave us.
+      # The release binary, checksum-verified like gitleaks above, rather than
+      # `cargo install`, which compiled it from source on every cache miss —
+      # minutes of the gate spent building a linter.
       - name: install cargo-deny
         run: |
-          if ! command -v cargo-deny >/dev/null 2>&1; then
-            cargo install cargo-deny --locked --version ^0.20
-          fi
+          set -euo pipefail
+          name="cargo-deny-${CARGO_DENY_VERSION}-x86_64-unknown-linux-musl"
+          curl -fsSL --retry 3 -o "$name.tar.gz" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${CARGO_DENY_VERSION}/$name.tar.gz"
+          echo "${CARGO_DENY_SHA256}  $name.tar.gz" | sha256sum --check --strict
+          tar -xzf "$name.tar.gz" "$name/cargo-deny"
+          sudo install -m 0755 "$name/cargo-deny" /usr/local/bin/cargo-deny
+          rm -rf "$name" "$name.tar.gz"
           cargo-deny --version
 
       - name: deny
@@ -186,14 +196,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: rustup show active-toolchain
-      - uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            target
-          key: ${{ runner.os }}-bundle-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test -p clwd-bundle
 
       # The library reads and writes bytes. If a runtime backend ever reaches
@@ -218,14 +223,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: rustup show active-toolchain
-      - uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            target
-          key: ${{ runner.os }}-backend-${{ matrix.feature }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          # One cache per matrix leg; the job id alone would collide.
+          key: ${{ matrix.feature }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # microvm needs Linux with KVM at runtime; compiling it does not.
       - run: cargo build -p clwd-runtime --features ${{ matrix.feature }}
 
@@ -248,14 +250,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: rustup show active-toolchain
-      - uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            target
-          key: ${{ runner.os }}-guest-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          # The guest fixture is outside the workspace and keeps its own target.
+          workspaces: |
+            . -> target
+            crates/runtime/tests/fixtures/guest -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: build sdk as a component
         run: cargo build -p clwd-sdk --target wasm32-wasip2
 
@@ -405,11 +406,17 @@ jobs:
 
       # Isolated CARGO_HOME and no sibling checkouts: nothing on this runner can
       # satisfy a path dep that a developer machine would resolve locally.
-      - name: build from a clean clone with isolated registry state
+      #
+      # `check`, not `build`. What this job proves is that every dependency
+      # resolves and every target type-checks from this clone alone; that needs
+      # resolution and analysis, not code generation. The gate job's `test` step
+      # builds and links the same commit, so a full build here only repeated it
+      # without a cache.
+      - name: check from a clean clone with isolated registry state
         working-directory: fresh
         env:
           CARGO_HOME: ${{ runner.temp }}/isolated-cargo
-        run: cargo build --workspace --locked
+        run: cargo check --workspace --all-targets --locked
 
   # clwd-agent is musl-only and deliberately outside default-members, so
   # `cargo build --workspace` never touches it. Its own job, so a failure here
@@ -421,14 +428,9 @@ jobs:
       - run: rustup show active-toolchain
       - name: musl linker
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-            target
-          key: ${{ runner.os }}-musl-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build -p clwd-agent --target x86_64-unknown-linux-musl
 
       - name: clwd-agent must stay out of default-members
