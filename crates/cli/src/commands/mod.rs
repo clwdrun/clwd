@@ -4,6 +4,7 @@
 //! command would have printed is part of `T`; how it reaches a terminal is the
 //! binary's problem.
 
+pub mod app;
 pub mod build;
 pub mod dev;
 pub mod init;

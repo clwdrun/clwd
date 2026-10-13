@@ -10,7 +10,7 @@ use std::pin::pin;
 use std::process::ExitCode;
 
 use clap::Parser;
-use clwd_cli::{Cli, CliError, Command, Format, Progress, SecretsAction, commands};
+use clwd_cli::{AppAction, Cli, CliError, Command, Format, Progress, SecretsAction, commands};
 use futures_core::Stream;
 use serde::Serialize;
 
@@ -135,6 +135,18 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
         } => emit(
             format,
             commands::build::execute(project, dest.clone(), !no_optimize, progress),
+            out,
+        ),
+        Command::App {
+            action:
+                AppAction::Create {
+                    host_label,
+                    org,
+                    platform,
+                },
+        } => emit(
+            format,
+            commands::app::create(host_label, org.as_deref(), platform.as_deref(), progress),
             out,
         ),
         Command::Publish {

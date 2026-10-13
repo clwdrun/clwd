@@ -14,7 +14,7 @@ pub mod platform;
 pub mod render;
 pub mod secrets;
 
-pub use cli::{Cli, Command, SecretsAction};
+pub use cli::{AppAction, Cli, Command, SecretsAction};
 pub use error::CliError;
 pub use render::Format;
 

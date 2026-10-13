@@ -120,6 +120,11 @@ pub enum Command {
         #[arg(long)]
         no_optimize: bool,
     },
+    /// Create and manage apps on a platform
+    App {
+        #[command(subcommand)]
+        action: AppAction,
+    },
     /// Publish a built bundle as a new version of an app
     Publish {
         /// The bundle to publish — the `.clwd` file `clwd build` produced.
@@ -169,6 +174,26 @@ pub enum Command {
 /// convenient spelling, so offering it means it is the one people use. Values
 /// arrive on stdin, which also means a key or certificate needs no encoding
 /// decision — stdin is bytes and the interface is `list<u8>`.
+/// `clwd app` subcommands.
+#[derive(clap::Subcommand, Debug)]
+pub enum AppAction {
+    /// Create an app, or get the one that already has this host label
+    Create {
+        /// The app's permanent host label: its URL is
+        /// `https://{label}.{org}.<apps domain>`, and the label can never be
+        /// changed or reused. Lowercase letters, digits and hyphens.
+        host_label: String,
+
+        /// The org to create it in. Defaults to `$CLWD_ORG`.
+        #[arg(long)]
+        org: Option<String>,
+
+        /// The platform base URL. Defaults to `$CLWD_PLATFORM_URL`.
+        #[arg(long)]
+        platform: Option<String>,
+    },
+}
+
 #[derive(clap::Subcommand, Debug)]
 pub enum SecretsAction {
     /// Store a secret, reading its value from stdin
