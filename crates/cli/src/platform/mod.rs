@@ -24,7 +24,7 @@ use crate::secrets::value::SecretValue;
 pub mod client;
 pub mod config;
 
-pub use client::{Published, publish};
+pub use client::{CreatedApp, Published, create_app, publish};
 
 /// A platform's base URL, validated to be http(s).
 ///
@@ -56,6 +56,15 @@ impl PlatformUrl {
     /// base URL that already carries a path (a reverse proxy prefix, say) is
     /// preserved rather than clobbered.
     pub fn versions_endpoint(&self, app: &AppId) -> Result<reqwest::Url, CliError> {
+        self.endpoint(&["v1", "apps", app.as_str(), "versions"])
+    }
+
+    /// `POST {base}/v1/orgs/{org}/apps` — create an app in `org`.
+    pub fn apps_endpoint(&self, org: &OrgId) -> Result<reqwest::Url, CliError> {
+        self.endpoint(&["v1", "orgs", org.as_str(), "apps"])
+    }
+
+    fn endpoint(&self, path: &[&str]) -> Result<reqwest::Url, CliError> {
         let mut url = self.0.clone();
         {
             let mut segments = url.path_segments_mut().map_err(|()| CliError::Config {
@@ -63,9 +72,7 @@ impl PlatformUrl {
             })?;
             // `pop_if_empty` drops the trailing empty segment a bare host carries
             // (`http://host` has path `/`), so the join does not leave `//`.
-            segments
-                .pop_if_empty()
-                .extend(["v1", "apps", app.as_str(), "versions"]);
+            segments.pop_if_empty().extend(path);
         }
         Ok(url)
     }
@@ -99,6 +106,32 @@ impl AppId {
             Err(CliError::InvalidArgument {
                 what: format!(
                     "{raw:?} is not an app id; it must be a UUID like \
+                     018f5b2a-0000-7000-8000-000000000000"
+                ),
+            })
+        }
+    }
+
+    /// The id as a URL path segment.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// An org's platform identity: a UUID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrgId(String);
+
+impl OrgId {
+    /// Validate and wrap. As with [`AppId`], only the shape is checked here.
+    pub fn parse(raw: &str) -> Result<Self, CliError> {
+        if is_uuid_shaped(raw) {
+            Ok(Self(raw.to_ascii_lowercase()))
+        } else {
+            Err(CliError::InvalidArgument {
+                what: format!(
+                    "{raw:?} is not an org id; it must be a UUID like \
                      018f5b2a-0000-7000-8000-000000000000"
                 ),
             })

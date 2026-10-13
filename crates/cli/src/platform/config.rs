@@ -29,6 +29,7 @@ use crate::secrets::value::wipe;
 const ENV_URL: &str = "CLWD_PLATFORM_URL";
 /// The environment variable carrying the platform token.
 const ENV_TOKEN: &str = "CLWD_TOKEN";
+const ENV_ORG: &str = "CLWD_ORG";
 /// The token file's name, beside the local secret store.
 const CREDENTIALS_FILE: &str = "credentials";
 
@@ -49,6 +50,25 @@ pub fn platform_url(flag: Option<&str>) -> Result<PlatformUrl, CliError> {
     }
     Err(CliError::Config {
         what: format!("no platform URL: pass --platform <url> or set {ENV_URL}"),
+    })
+}
+
+/// Resolve the org: the `--org` flag, then `$CLWD_ORG`.
+///
+/// A token cannot yet say which org it belongs to, so the org is named
+/// explicitly. Neither source is a configuration error naming both.
+pub fn org(flag: Option<&str>) -> Result<super::OrgId, CliError> {
+    if let Some(raw) = flag {
+        return super::OrgId::parse(raw);
+    }
+    if let Some(raw) = std::env::var_os(ENV_ORG) {
+        let raw = raw.to_str().ok_or_else(|| CliError::Config {
+            what: format!("{ENV_ORG} is not valid UTF-8"),
+        })?;
+        return super::OrgId::parse(raw.trim());
+    }
+    Err(CliError::Config {
+        what: format!("no org: pass --org <id> or set {ENV_ORG}"),
     })
 }
 

@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{AppId, PlatformError, PlatformUrl, Token};
+use super::{AppId, OrgId, PlatformError, PlatformUrl, Token};
 use crate::error::CliError;
 
 /// The version resource the platform returns on a successful publish.
@@ -134,6 +134,70 @@ pub async fn publish(
 /// the platform gives no hint of its own, the header becomes one so the caller
 /// still learns how long to wait; when it does, the platform's hint is kept
 /// verbatim.
+/// An app, as creating it returned it.
+///
+/// `created` is `false` when the org already had a live app with this host
+/// label: creation is idempotent by label, so running the same command again
+/// returns the same app rather than failing.
+#[must_use]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct CreatedApp {
+    pub id: String,
+    pub org_id: String,
+    /// The app's permanent label: its URL never changes.
+    pub host_label: String,
+    pub name: String,
+    pub url: String,
+    pub created: bool,
+}
+
+impl std::fmt::Display for CreatedApp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.created {
+            writeln!(f, "created app {} ({})", self.host_label, self.id)?;
+        } else {
+            writeln!(f, "app {} already exists ({})", self.host_label, self.id)?;
+        }
+        writeln!(f, "url:  {}", self.url)?;
+        // The follow-up command, spelled out, so the reader — often an agent —
+        // does not have to work out where the id goes.
+        write!(f, "next: clwd publish <bundle> --app {}", self.id)
+    }
+}
+
+/// Create the app `host_label` names in `org`, or get the one that already
+/// holds that label.
+pub async fn create_app(
+    url: &PlatformUrl,
+    org: &OrgId,
+    token: &Token,
+    host_label: &str,
+) -> Result<CreatedApp, CliError> {
+    let endpoint = url.apps_endpoint(org)?;
+    let client = reqwest::Client::builder().build().map_err(pure_network)?;
+
+    let response = client
+        .post(endpoint)
+        .bearer_auth(token.as_bearer())
+        .json(&serde_json::json!({ "host_label": host_label }))
+        .send()
+        .await
+        .map_err(pure_network)?;
+
+    if response.status().is_success() {
+        response
+            .json::<CreatedApp>()
+            .await
+            .map_err(|e| CliError::Internal {
+                source: anyhow::Error::new(e)
+                    .context("the platform's success response was not an app resource"),
+            })
+    } else {
+        Err(platform_error(response).await)
+    }
+}
+
 async fn platform_error(response: reqwest::Response) -> CliError {
     let status = response.status();
     let retry_after = response
@@ -329,6 +393,79 @@ mod tests {
             req.body, bundle,
             "the bundle bytes must reach the platform intact"
         );
+    }
+
+    const ORG: &str = "018f5b2a-2222-7000-8000-000000000002";
+
+    fn app_body(created: bool) -> String {
+        format!(
+            r#"{{"id":"{APP}","org_id":"{ORG}","host_label":"notes","name":"notes",
+                "url":"https://notes.acme.apps.example","created":{created}}}"#
+        )
+    }
+
+    async fn create(base: &str) -> Result<CreatedApp, CliError> {
+        let url = PlatformUrl::parse(base).expect("valid base");
+        let org = OrgId::parse(ORG).expect("valid org");
+        let token = Token::parse(TOKEN).expect("valid token");
+        create_app(&url, &org, &token, "notes").await
+    }
+
+    #[tokio::test]
+    async fn a_201_creates_an_app_and_the_request_is_well_formed() {
+        let (base, server) = serve_once(201, "Created", "", app_body(true)).await;
+
+        let app = create(&base).await.expect("create succeeds");
+        assert!(app.created);
+        assert_eq!(app.id, APP);
+        assert_eq!(app.url, "https://notes.acme.apps.example");
+        assert_eq!(
+            app.to_string(),
+            format!(
+                "created app notes ({APP})\nurl:  https://notes.acme.apps.example\n\
+                 next: clwd publish <bundle> --app {APP}"
+            )
+        );
+
+        let req = server.await.expect("server joined");
+        assert_eq!(req.method, "POST");
+        assert_eq!(req.path, format!("/v1/orgs/{ORG}/apps"));
+        assert_eq!(
+            req.authorization.as_deref(),
+            Some(format!("Bearer {TOKEN}").as_str())
+        );
+        assert_eq!(req.content_type.as_deref(), Some("application/json"));
+        let body: serde_json::Value = serde_json::from_slice(&req.body).expect("JSON body");
+        assert_eq!(body, serde_json::json!({ "host_label": "notes" }));
+    }
+
+    /// Idempotent by label: the same command again returns the same app.
+    #[tokio::test]
+    async fn a_200_is_the_existing_app_not_an_error() {
+        let (base, _server) = serve_once(200, "OK", "", app_body(false)).await;
+        let app = create(&base).await.expect("an existing app is a success");
+        assert!(!app.created);
+        assert!(
+            app.to_string()
+                .starts_with(&format!("app notes already exists ({APP})")),
+            "{app}"
+        );
+    }
+
+    /// A retired label keeps the platform's code, message and hint.
+    #[tokio::test]
+    async fn a_retired_label_surfaces_the_platform_conflict() {
+        let (base, _server) = serve_once(
+            409,
+            "Conflict",
+            "",
+            r#"{"code":"control-plane.conflict","message":"conflict: host_label \"notes\" belonged to a deleted app","hint":"choose another","retryable":false,"request_id":"r"}"#.to_owned(),
+        )
+        .await;
+        let err = create(&base).await.expect_err("a conflict is an error");
+        assert_eq!(err.code(), "control-plane.conflict");
+        assert_eq!(err.hint(), Some("choose another"));
+        assert!(!err.retryable());
     }
 
     #[tokio::test]
