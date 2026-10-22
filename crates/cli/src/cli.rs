@@ -147,6 +147,21 @@ pub enum Command {
         #[arg(long)]
         platform: Option<String>,
     },
+    /// Build, create the app if it is missing, publish, and print its URL
+    Deploy {
+        /// The project to deploy. Defaults to the current directory. Its
+        /// `clwd.toml` must declare `[app] host_label`.
+        #[arg(default_value = ".")]
+        project: std::path::PathBuf,
+
+        /// The org to deploy into. Defaults to `$CLWD_ORG`.
+        #[arg(long)]
+        org: Option<String>,
+
+        /// The platform base URL. Defaults to `$CLWD_PLATFORM_URL`.
+        #[arg(long)]
+        platform: Option<String>,
+    },
     /// Stream logs for an app
     Logs {
         /// Keep the stream open and print lines as they arrive

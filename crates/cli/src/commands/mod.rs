@@ -6,6 +6,7 @@
 
 pub mod app;
 pub mod build;
+pub mod deploy;
 pub mod dev;
 pub mod init;
 /// Sandbox construction shared by `run` and `dev`. Behind `run` because it

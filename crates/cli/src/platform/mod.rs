@@ -24,7 +24,7 @@ use crate::secrets::value::SecretValue;
 pub mod client;
 pub mod config;
 
-pub use client::{CreatedApp, Published, create_app, publish};
+pub use client::{Certificate, CreatedApp, Published, create_app, publish};
 
 /// A platform's base URL, validated to be http(s).
 ///

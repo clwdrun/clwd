@@ -59,7 +59,7 @@ pub fn execute(
 /// The bundle is not validated here: the platform decodes it and returns a
 /// `bundle.*` code if it is malformed, which the envelope surfaces verbatim.
 /// A second copy of that check would be a second place for it to drift.
-fn read_bundle(path: &Path) -> Result<Vec<u8>, CliError> {
+pub(crate) fn read_bundle(path: &Path) -> Result<Vec<u8>, CliError> {
     std::fs::read(path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => CliError::NotFound {
             what: format!("no bundle at {}", path.display()),

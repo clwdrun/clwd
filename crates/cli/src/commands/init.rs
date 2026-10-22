@@ -3,13 +3,13 @@
 //! # Copied, not generated
 //!
 //! A template is a real project that CI builds. `init` copies one and rewrites
-//! two names. That keeps one source of truth: what CI proves is byte-for-byte
-//! what an author receives, minus the two rewrites in [`substitutions`].
+//! a few lines. That keeps one source of truth: what CI proves is byte-for-byte
+//! what an author receives, minus the rewrites in [`substitutions`].
 //!
 //! A generator would be a second description of the same thing, and the two
 //! would drift the first time someone edited a template without editing it.
 //!
-//! The rewrites are in [`substitutions`], and there are deliberately only two.
+//! The rewrites are in [`substitutions`], and there are deliberately only three.
 //! Every one is a way a scaffolded project can differ from the one CI built, so
 //! each has to earn its place.
 //!
@@ -213,6 +213,20 @@ pub(crate) fn substitutions(template: &str, name: &str, sdk: &Path) -> Vec<(Stri
             format!("name = \"{template}\""),
             format!("name = \"{name}\""),
         ),
+        // The name becomes the host label only when it is a valid one. When it
+        // is not, the line is left as a commented example rather than a label
+        // nobody chose: a host label is permanent once deployed.
+        (
+            format!("host_label = \"{template}\""),
+            if crate::build::manifest::is_host_label(name) {
+                format!("host_label = \"{name}\"")
+            } else {
+                format!(
+                    "# host_label = \"your-app\"  ({name:?} is not a valid label: \
+                     use a-z, 0-9 and '-')"
+                )
+            },
+        ),
         (
             TEMPLATE_SDK_PATH.to_owned(),
             format!("path = {:?}", sdk.display().to_string()),
@@ -371,7 +385,8 @@ mod tests {
     }
 
     /// Every template declares its app name, since secrets are scoped to it and
-    /// `clwd secrets` refuses to run without one.
+    /// `clwd secrets` refuses to run without one — and its host label, since
+    /// `clwd deploy` does.
     #[test]
     fn every_template_declares_an_app_name() {
         for t in TEMPLATES {
@@ -388,6 +403,7 @@ mod tests {
                 "{}'s clwd.toml should name the app after the template",
                 t.name
             );
+            assert_eq!(source.host_label(), Some(t.name), "{}", t.name);
         }
     }
 
