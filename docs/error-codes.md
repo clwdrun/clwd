@@ -159,7 +159,7 @@ clwd could not read its own settings for this machine. Either the config file is
 
 ### `cli.manifest_invalid`
 
-The `clwd.toml` in the project being built says something clwd cannot act on. Common causes: a key spelled wrongly, a capability granted twice, a grant that names nothing, a runtime clwd does not have, or the project's own `clwd.toml` swept into the files being bundled — where it would collide with the one the build writes. Unknown keys are refused rather than skipped: most keys here grant a capability, and one quietly ignored is a permission the author believes they have and does not.
+The `clwd.toml` in the project being built says something clwd cannot act on. Common causes: a key spelled wrongly, a capability granted twice, a grant that names nothing, a runtime clwd does not have, or the project's own `clwd.toml` swept into the files being bundled — where it would collide with the one the build writes. `clwd deploy` also refuses a manifest with no `[app] host_label`, or one that is not a DNS label, before it builds anything. Unknown keys are refused rather than skipped: most keys here grant a capability, and one quietly ignored is a permission the author believes they have and does not.
 
 **What to do:** The message names the offending key or file and what is wrong with it. Correct that line. Do not delete the file to start over — it holds the app's capability grants, and an empty one grants nothing at all.
 
@@ -203,7 +203,7 @@ Decided by clwd on your machine when a command that talks to a platform could no
 
 ### `net.unreachable`
 
-A command that talks to a platform — `clwd publish` — could not reach one. The connection was refused, timed out, or failed to establish a secure channel, so no platform ever saw the request and none could say what was wrong. This is the network between you and the platform, not the platform itself.
+A command that talks to a platform — `clwd publish`, `clwd app create`, `clwd deploy` — could not reach one. The connection was refused, timed out, or failed to establish a secure channel, so no platform ever saw the request and none could say what was wrong. This is the network between you and the platform, not the platform itself.
 
 **What to do:** Check the platform URL (the `--platform` flag or `CLWD_PLATFORM_URL`) and that you have a working connection, then run the command again. A publish is safe to repeat: the platform records a version once per bundle, so a retry never creates a duplicate.
 

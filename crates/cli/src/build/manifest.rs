@@ -63,6 +63,11 @@ struct AppSection {
     /// format assigns no meaning to an app's name and adding one would be a
     /// spec change for something only local tooling needs.
     name: Option<String>,
+    /// The app's permanent host label, which `clwd deploy` creates it under.
+    ///
+    /// CLI-side only, like `name`: the bundle is the same whichever app it is
+    /// published to.
+    host_label: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, PartialEq, Eq)]
@@ -83,6 +88,20 @@ struct LimitsSection {
 
 fn invalid(what: impl Into<String>) -> CliError {
     CliError::ManifestInvalid { what: what.into() }
+}
+
+/// Whether `s` is a DNS label per RFC 1123, lowercase only: 1 to 63 of
+/// `a-z`, `0-9` and `-`, not starting or ending with `-`.
+///
+/// Only the syntax. Whether the org may use the label — taken, or retired with
+/// a deleted app — is the platform's to decide.
+#[must_use]
+pub fn is_host_label(s: &str) -> bool {
+    (1..=63).contains(&s.len())
+        && !s.starts_with('-')
+        && !s.ends_with('-')
+        && s.bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
 }
 
 /// Normalize one capability array: reject empty elements and duplicates, sort.
@@ -151,6 +170,15 @@ impl Source {
     #[must_use]
     pub fn app_name(&self) -> Option<&str> {
         self.app.as_ref().and_then(|a| a.name.as_deref())
+    }
+
+    /// The app's declared host label, if it has one.
+    ///
+    /// No fallback, for the reason `app_name` has none, and a sharper one: a
+    /// label is permanent once an app is created under it.
+    #[must_use]
+    pub fn host_label(&self) -> Option<&str> {
+        self.app.as_ref().and_then(|a| a.host_label.as_deref())
     }
 
     /// The capability set to seal into the bundle, defaults applied.
@@ -285,6 +313,32 @@ mod tests {
             .runtime()
             .expect_err("jvm is not a runtime");
         assert!(err.to_string().contains("jvm"), "got: {err}");
+    }
+
+    #[test]
+    fn a_host_label_is_an_rfc_1123_label() {
+        for good in ["a", "notes", "my-app-2", "0day", &"a".repeat(63)] {
+            assert!(is_host_label(good), "{good:?} is a label");
+        }
+        for bad in [
+            "",
+            "-notes",
+            "notes-",
+            "Notes",
+            "my_app",
+            "my.app",
+            "caf\u{e9}",
+            &"a".repeat(64),
+        ] {
+            assert!(!is_host_label(bad), "{bad:?} is not a label");
+        }
+    }
+
+    #[test]
+    fn a_host_label_is_read_from_the_app_section() {
+        let s = Source::parse("[app]\nhost_label = \"notes\"\n").expect("valid");
+        assert_eq!(s.host_label(), Some("notes"));
+        assert_eq!(Source::default().host_label(), None);
     }
 
     #[test]

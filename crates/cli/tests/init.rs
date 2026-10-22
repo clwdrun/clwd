@@ -111,6 +111,10 @@ fn undo_substitutions(written: &str, template: &str, name: &str) -> String {
         &format!("name = \"{name}\""),
         &format!("name = \"{template}\""),
     )
+    .replace(
+        &format!("host_label = \"{name}\""),
+        &format!("host_label = \"{template}\""),
+    )
 }
 
 /// Every file under `dir`, as paths relative to `root`, with `/` separators.
@@ -156,10 +160,26 @@ fn the_project_name_reaches_both_manifests() {
 
     assert!(cargo.contains("name = \"my-app\""), "{cargo}");
     assert!(clwd.contains("name = \"my-app\""), "{clwd}");
+    assert!(clwd.contains("host_label = \"my-app\""), "{clwd}");
     assert!(
         !cargo.contains("name = \"minimal\""),
         "the template's own name survived: {cargo}"
     );
+}
+
+/// A name that is not a DNS label is not made into a host label: the line is
+/// left commented, next to the sentence saying a label is permanent, and
+/// `clwd deploy` refuses until the author picks one.
+#[test]
+fn a_name_that_is_not_a_label_leaves_the_host_label_for_the_author() {
+    let scratch = Scratch::new("nolabel");
+    let made = init::execute(&scratch.0, "my_app", Some("minimal"), None).expect("init");
+    let clwd = std::fs::read_to_string(made.project.join("clwd.toml")).expect("clwd.toml");
+
+    assert!(clwd.contains("# host_label = \"your-app\""), "{clwd}");
+    assert!(clwd.contains("Permanent once deployed"), "{clwd}");
+    let source = clwd_cli::build::Source::parse(&clwd).expect("still valid");
+    assert_eq!(source.host_label(), None, "{clwd}");
 }
 
 /// `init` refuses to write into something that exists, rather than merging into

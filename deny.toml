@@ -11,7 +11,16 @@ targets = [
 all-features = true
 
 [advisories]
-ignore = []
+# Unmaintained, not vulnerable: these crates were folded into zbus 6. They
+# reach us only through keyring's Linux secret-service store, and no release of
+# keyring or zbus-secret-service-keyring-store uses zbus 6 yet. Remove each
+# entry once that store moves to zbus 6 — deny reports an ignore that no longer
+# matches, so a stale one does not linger silently.
+ignore = [
+  { id = "RUSTSEC-2026-0370", reason = "zvariant merged into zbus 6; only via keyring's zbus store, which has no zbus 6 release" },
+  { id = "RUSTSEC-2026-0371", reason = "zbus_names merged into zbus 6; only via keyring's zbus store, which has no zbus 6 release" },
+  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive merged into zbus 6; only via keyring's zbus store, which has no zbus 6 release" },
+]
 # Explicit, not defaulted: the meaning of this key changed across cargo-deny
 # releases, and a sandbox runtime should not have its advisory scope quietly
 # widen or narrow on a tool upgrade.

@@ -199,7 +199,9 @@ const TABLE: &[Row] = &[
                   act on. Common causes: a key spelled wrongly, a capability granted twice, \
                   a grant that names nothing, a runtime clwd does not have, or the project's \
                   own `clwd.toml` swept into the files being bundled — where it would collide \
-                  with the one the build writes. Unknown keys are refused rather than \
+                  with the one the build writes. `clwd deploy` also refuses a manifest \
+                  with no `[app] host_label`, or one that is not a DNS label, before it \
+                  builds anything. Unknown keys are refused rather than \
                   skipped: most keys here grant a capability, and one quietly ignored is a \
                   permission the author believes they have and does not.",
         recovery: "The message names the offending key or file and what is wrong with it. \
@@ -239,7 +241,8 @@ const TABLE: &[Row] = &[
     // ---- net.* — decided by clwd-cli, for a call that reached no platform ----
     Row {
         code: "net.unreachable",
-        meaning: "A command that talks to a platform — `clwd publish` — could not reach one. \
+        meaning: "A command that talks to a platform — `clwd publish`, `clwd app create`, \
+                  `clwd deploy` — could not reach one. \
                   The connection was refused, timed out, or failed to establish a secure \
                   channel, so no platform ever saw the request and none could say what was \
                   wrong. This is the network between you and the platform, not the platform \

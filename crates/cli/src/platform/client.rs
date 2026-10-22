@@ -27,6 +27,22 @@ struct VersionResource {
     digest: String,
     /// `pending`, `ready`, or `failed` — whatever it was when the row returned.
     state: String,
+    /// The org's certificate. Absent from a platform that predates it.
+    #[serde(default)]
+    certificate: Option<Certificate>,
+}
+
+/// Where the org's TLS certificate stands, as a publish reports it.
+///
+/// An org's first publish is what requests its certificate, so until it is
+/// issued the app's URL fails the TLS handshake. That is worth saying loudly:
+/// otherwise a deploy that succeeded hands back a URL that does not load.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Certificate {
+    /// `pending`, `issued` or `failed`.
+    pub status: String,
+    /// What the status means for reaching the org's apps, in the platform's words.
+    pub message: String,
 }
 
 /// The shared error envelope, as it arrives on the wire.
@@ -58,6 +74,9 @@ pub struct Published {
     /// Whether this call created the version (`201`) or found it already there
     /// (`200`). Idempotency made visible, not an error.
     pub created: bool,
+    /// The org's certificate, only when it is not yet `issued`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate: Option<Certificate>,
 }
 
 impl VersionResource {
@@ -68,6 +87,7 @@ impl VersionResource {
             digest: self.digest,
             state: self.state,
             created,
+            certificate: self.certificate.filter(|c| c.status != "issued"),
         }
     }
 }
@@ -84,7 +104,11 @@ impl std::fmt::Display for Published {
             )?;
         }
         writeln!(f, "  app:    {}", self.app_id)?;
-        write!(f, "  digest: {}", self.digest)
+        write!(f, "  digest: {}", self.digest)?;
+        if let Some(c) = &self.certificate {
+            write!(f, "\n  certificate {}: {}", c.status, c.message)?;
+        }
+        Ok(())
     }
 }
 
@@ -466,6 +490,33 @@ mod tests {
         assert_eq!(err.code(), "control-plane.conflict");
         assert_eq!(err.hint(), Some("choose another"));
         assert!(!err.retryable());
+    }
+
+    /// A certificate is reported only while it is not yet issued: an issued one
+    /// is the normal case and would be noise on every publish.
+    #[tokio::test]
+    async fn only_an_unissued_certificate_is_reported() {
+        let with = |status: &str| {
+            version_body("ready").replacen(
+                '{',
+                &format!(r#"{{"certificate":{{"status":"{status}","message":"m"}},"#),
+                1,
+            )
+        };
+        let (base, _server) = serve_once(201, "Created", "", with("pending")).await;
+        let published = call(&base, b"bytes").await.expect("succeeds");
+        let cert = published.certificate.as_ref().expect("pending is reported");
+        assert_eq!(cert.status, "pending");
+        assert!(
+            published.to_string().ends_with("certificate pending: m"),
+            "{published}"
+        );
+
+        let (base, _server) = serve_once(201, "Created", "", with("issued")).await;
+        let published = call(&base, b"bytes").await.expect("succeeds");
+        assert!(published.certificate.is_none());
+        let json = serde_json::to_value(&published).expect("serializes");
+        assert!(json.get("certificate").is_none(), "{json}");
     }
 
     #[tokio::test]
