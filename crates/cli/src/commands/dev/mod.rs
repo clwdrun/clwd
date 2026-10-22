@@ -54,7 +54,7 @@ mod served {
     use bytes::Bytes;
     use clwd_bundle::BundleRef;
     use clwd_runtime::wasm::WasmSandbox;
-    use clwd_runtime::{Body, Handle, InvokeOptions, Response, Sandbox, SpawnOptions};
+    use clwd_runtime::{Body, Handle, InvokeOptions, Sandbox, SpawnOptions};
     use futures_core::Stream as _;
     use http_body_util::{BodyExt as _, Full};
     use hyper::body::Incoming;
@@ -160,45 +160,58 @@ mod served {
         }
     }
 
-    /// Serve one request against `active`, converting hyper's request into the
-    /// runtime's and back.
-    async fn serve_one(
+    /// Serve one request against `active`: everything the dev server does
+    /// after reading the request off the socket, so a test of this is a test
+    /// of what a browser gets.
+    ///
+    /// The app's status, headers and body all reach the browser. Headers are
+    /// not decoration: without `Location` a form's `303` goes nowhere, and
+    /// without `Content-Type` and `nosniff` the browser guesses what the body
+    /// is — which is how stored text ends up running as markup.
+    pub(super) async fn respond(
         active: &Active,
-        req: hyper::Request<Incoming>,
-    ) -> Result<Response, CliError> {
-        let (parts, body) = req.into_parts();
-        let bytes = body
-            .collect()
-            .await
-            .map_err(|e| CliError::Internal {
-                source: anyhow::Error::new(e).context("reading the request body"),
-            })?
-            .to_bytes();
-
+        method: hyper::Method,
+        path_and_query: &str,
+        headers: hyper::HeaderMap,
+        body: Bytes,
+    ) -> hyper::Response<Full<Bytes>> {
         // Rebuild the URI as an absolute localhost URL: a server receives the
         // origin form (`/path`), but `wasi:http` wants a scheme and authority.
-        let path_and_query = parts
-            .uri
-            .path_and_query()
-            .map(|pq| pq.as_str())
-            .unwrap_or("/");
         let mut builder = hyper::Request::builder()
-            .method(parts.method)
+            .method(method)
             .uri(format!("http://127.0.0.1{path_and_query}"));
-        if let Some(headers) = builder.headers_mut() {
-            *headers = parts.headers;
+        if let Some(h) = builder.headers_mut() {
+            *h = headers;
         }
-        let request = builder
-            .body(Body::from(bytes))
-            .map_err(|e| CliError::InvalidArgument {
+        let served = match builder.body(Body::from(body)) {
+            Ok(request) => active
+                .sandbox
+                .invoke(&active.handle, request, InvokeOptions::default())
+                .await
+                .map_err(local::from_runtime),
+            Err(e) => Err(CliError::InvalidArgument {
                 what: format!("the request could not be rebuilt: {e}"),
-            })?;
+            }),
+        };
+        match served {
+            Ok(resp) => {
+                let (parts, body) = resp.into_parts();
+                let mut out = hyper::Response::new(Full::new(body.into_bytes()));
+                *out.status_mut() = parts.status;
+                *out.headers_mut() = parts.headers;
+                out
+            }
+            Err(e) => {
+                tracing::warn!("request failed: {e}");
+                internal_error()
+            }
+        }
+    }
 
-        active
-            .sandbox
-            .invoke(&active.handle, request, InvokeOptions::default())
-            .await
-            .map_err(local::from_runtime)
+    fn internal_error() -> hyper::Response<Full<Bytes>> {
+        let mut out = hyper::Response::new(Full::new(Bytes::from_static(b"internal error")));
+        *out.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
+        out
     }
 
     /// The hyper service: serve against the current `Active`, log the request.
@@ -210,39 +223,39 @@ mod served {
         req: hyper::Request<Incoming>,
     ) -> Result<hyper::Response<Full<Bytes>>, Infallible> {
         let start = Instant::now();
-        let method = req.method().clone();
-        let path = req
-            .uri()
+        let (parts, body) = req.into_parts();
+        let path = parts
+            .uri
             .path_and_query()
             .map(|pq| pq.as_str().to_owned())
             .unwrap_or_else(|| "/".to_owned());
 
-        let active = current(&reloadable);
-        let (status, body) = match serve_one(&active, req).await {
-            Ok(resp) => (resp.status(), resp.into_body().into_bytes()),
-            Err(e) => {
-                tracing::warn!("request failed: {e}");
-                (
-                    hyper::StatusCode::INTERNAL_SERVER_ERROR,
-                    Bytes::from_static(b"internal error"),
+        let response = match body.collect().await {
+            Ok(collected) => {
+                let active = current(&reloadable);
+                respond(
+                    &active,
+                    parts.method.clone(),
+                    &path,
+                    parts.headers,
+                    collected.to_bytes(),
                 )
+                .await
+            }
+            Err(e) => {
+                tracing::warn!("reading the request body failed: {e}");
+                internal_error()
             }
         };
 
         // The request timing — deliberately not the rebuild timing, which the
         // reload line reports separately.
         tracing::info!(
-            "{method} {path} -> {} ({} ms)",
-            status.as_u16(),
+            "{} {path} -> {} ({} ms)",
+            parts.method,
+            response.status().as_u16(),
             start.elapsed().as_millis()
         );
-
-        let response = hyper::Response::builder()
-            .status(status)
-            .body(Full::new(body))
-            .unwrap_or_else(|_| {
-                hyper::Response::new(Full::new(Bytes::from_static(b"internal error")))
-            });
         Ok(response)
     }
 
@@ -332,6 +345,9 @@ mod served {
         }
         Ok(())
     }
+
+    #[cfg(test)]
+    mod templates;
 
     #[cfg(test)]
     mod tests {

@@ -6,7 +6,7 @@ members = ["crates/*"]
 # Templates are shipped projects, not workspace members: they target
 # wasm32-wasip2, they are copied out by `clwd init`, and they must build exactly
 # as an author receives them.
-exclude = ["crates/runtime/tests/fixtures/guest", "templates/minimal", "templates/notes", "templates/webhook"]
+exclude = ["crates/runtime/tests/fixtures/guest", "templates/hello", "templates/notes"]
 # clwd-agent is musl-only and built via its own CI job / `-p` flag,
 # not as part of a plain `cargo build --workspace`.
 default-members = [

@@ -271,7 +271,7 @@ jobs:
           tool: wasm-tools@1.257.1
 
       - name: wit parses standalone
-        run: wasm-tools component wit wit/
+        run: wasm-tools component wit crates/sdk/wit/
 
       # The fixture is `exclude`d from the workspace, so `cargo build
       # --workspace` and `just check` both skip it, and the conformance suite

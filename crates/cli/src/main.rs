@@ -103,20 +103,19 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
             template,
             into,
             list,
-        } => {
-            if *list {
-                for (name, teaches) in commands::init::list() {
-                    writeln!(out, "{name:<10} {teaches}").map_err(internal)?;
-                }
-                Ok(())
-            } else {
-                emit(
-                    format,
-                    commands::init::execute(into, name, template.as_deref(), progress),
-                    out,
-                )
-            }
-        }
+        } => match (list, name) {
+            (true, _) => emit(format, Ok(commands::init::list()), out),
+            (false, Some(name)) => emit(
+                format,
+                commands::init::execute(into, name, template.as_deref(), progress),
+                out,
+            ),
+            // clap requires a name unless `--list` is given; this is that rule
+            // restated, not a reachable path.
+            (false, None) => Err(CliError::InvalidArgument {
+                what: "a name is required unless --list is given".to_owned(),
+            }),
+        },
         Command::Run {
             bundle,
             path,

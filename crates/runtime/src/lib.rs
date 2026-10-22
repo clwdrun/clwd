@@ -40,7 +40,7 @@ pub use clwd_bundle::BundleRef;
 ///
 /// `clwd:identity/context` exposes the caller ambiently — `get-caller()` takes
 /// no request argument (see the DECISION 1 block in
-/// `wit/deps/identity/identity.wit`). That is only sound if a given component
+/// `crates/sdk/wit/deps/identity/identity.wit`). That is only sound if a given component
 /// instance is never observed by two different callers:
 ///
 /// > A component instance observes exactly one caller for its whole lifetime.

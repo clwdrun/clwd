@@ -36,12 +36,16 @@ pub(crate) const LOCAL_SUBJECT: &str = "local";
 /// never collide with a real org slug.
 pub(crate) const LOCAL_ORG: &str = "local";
 
+/// The email a local run presents. `.localhost` is reserved, so this can never
+/// be someone's real address, and a template that greets by email has
+/// something to show locally.
+pub(crate) const LOCAL_EMAIL: &str = "local@localhost";
+
 /// The caller a local run presents. See [`LOCAL_SUBJECT`].
 pub(crate) fn local_identity() -> IdentityCtx {
-    IdentityCtx::new(Caller::User(Principal::new(
-        SubjectId::new(LOCAL_SUBJECT),
-        OrgId::new(LOCAL_ORG),
-    )))
+    let mut principal = Principal::new(SubjectId::new(LOCAL_SUBJECT), OrgId::new(LOCAL_ORG));
+    principal.email = Some(LOCAL_EMAIL.to_owned());
+    IdentityCtx::new(Caller::User(principal))
 }
 
 /// Read bundle bytes, rejecting a bare component with the fix.
@@ -89,6 +93,17 @@ pub(crate) fn local_sandbox(
     bytes: Vec<u8>,
     project: &Path,
 ) -> Result<WasmSandbox, CliError> {
+    local_sandbox_with(digest, bytes, project, Arc::new(MemoryAppDataStore::new()))
+}
+
+/// [`local_sandbox`] with the app-data store supplied, so a test can watch
+/// every read and write the app makes.
+pub(crate) fn local_sandbox_with(
+    digest: &BundleRef,
+    bytes: Vec<u8>,
+    project: &Path,
+    data: Arc<dyn AppDataStore>,
+) -> Result<WasmSandbox, CliError> {
     let bundles = MemoryBundleStore::new();
     bundles.insert(digest, bytes);
 
@@ -100,13 +115,8 @@ pub(crate) fn local_sandbox(
         },
     };
 
-    WasmSandbox::with_stores(
-        Arc::new(bundles),
-        stores.secrets,
-        Arc::new(MemoryAppDataStore::new()) as Arc<dyn AppDataStore>,
-        stores.identity,
-    )
-    .map_err(from_runtime)
+    WasmSandbox::with_stores(Arc::new(bundles), stores.secrets, data, stores.identity)
+        .map_err(from_runtime)
 }
 
 // ---------------------------------------------------------------------------

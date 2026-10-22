@@ -32,7 +32,7 @@ use a Linux VM.
 | `clwd-agent` | musl init (PID 1) that runs *inside* the microVM guest |
 
 "Agent" is overloaded in this repo. `clwd-agent` is the in-guest init process —
-unrelated to the AI agents that generate app code (`templates/`, `wit/`, the
+unrelated to the AI agents that generate app code (`templates/`, `crates/sdk/wit/`, the
 untrusted-code assumption below) and unrelated to the platform repo's "Agent
 Surface" phase. When either sense is not obvious from context, say which.
 
@@ -74,7 +74,7 @@ microvm code as if snapshots already exist.
 
 ## Product surface
 
-`templates/` and `wit/` are read by agents generating apps, not just by humans.
+`templates/` and `crates/sdk/wit/` are read by agents generating apps, not just by humans.
 Treat changes there as product changes: breaking a template breaks generated code
 in the field. `clwd-sdk` publishes to crates.io on its own version cadence and is
 consumed by `platform` via a tag-pinned git dependency, so a breaking SDK change
@@ -123,7 +123,7 @@ The general form, and the one worth remembering:
 
 What each of these needed was the same: exercise the property against the thing
 that judges it. `ns.key()` should be checked against the grammar
-`wit/deps/app-data/app-data.wit` publishes, not against a string someone chose.
+`crates/sdk/wit/deps/app-data/app-data.wit` publishes, not against a string someone chose.
 The conformance suite needed something that rebuilds the fixture. The optimiser
 comparison needed the tool installed rather than a conditional skip.
 

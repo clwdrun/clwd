@@ -4,10 +4,10 @@
 # empty, so what an app can reach is visible without reading this file.
 
 [app]
-name = "minimal"
+name = "hello"
 # Where `clwd deploy` puts the app: https://<host_label>.<org>.<apps domain>.
 # Permanent once deployed: a host label can never be changed or reused.
-host_label = "minimal"
+host_label = "hello"
 
 [capabilities]
 # Deny by default. Three empty arrays, written out rather than left absent:
