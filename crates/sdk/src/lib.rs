@@ -94,7 +94,7 @@
 extern crate alloc;
 
 wit_bindgen::generate!({
-    path: "../../wit",
+    path: "wit",
     world: "app",
     generate_all,
     // The guest links this; nothing here should pull in a runtime.
@@ -110,11 +110,14 @@ wit_bindgen::generate!({
 pub mod caller;
 pub mod data;
 pub mod error;
+pub mod form;
+pub mod html;
 pub mod http;
 pub mod secrets_api;
 
 pub use caller::{Caller, caller};
 pub use error::Error;
+pub use html::Html;
 pub use http::{Method, Request, Response};
 pub use secrets_api::secret;
 

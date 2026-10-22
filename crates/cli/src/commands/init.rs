@@ -42,6 +42,10 @@ struct Template {
     name: &'static str,
     /// One line, shown by `--list`. What this template teaches.
     teaches: &'static str,
+    /// Whether an app scaffolded from this works when deployed today. `false`
+    /// is a promise the README explains: it runs under `clwd dev`, and names
+    /// what deploying it waits on.
+    works_deployed: bool,
     files: &'static [TemplateFile],
 }
 
@@ -53,30 +57,32 @@ struct Template {
 /// which is what `init_output_matches_the_template_it_copied` exists to catch.
 const TEMPLATES: &[Template] = &[
     Template {
-        name: "minimal",
-        teaches: "the smallest app that answers a request",
+        name: "hello",
+        teaches: "who is calling, with no auth code, and escaping by construction",
+        works_deployed: true,
         files: &[
             TemplateFile {
                 path: "Cargo.toml",
-                contents: include_str!("../../../../templates/minimal/Cargo.toml"),
+                contents: include_str!("../../../../templates/hello/Cargo.toml"),
             },
             TemplateFile {
                 path: "clwd.toml",
-                contents: include_str!("../../../../templates/minimal/clwd.toml"),
+                contents: include_str!("../../../../templates/hello/clwd.toml"),
             },
             TemplateFile {
                 path: "src/lib.rs",
-                contents: include_str!("../../../../templates/minimal/src/lib.rs"),
+                contents: include_str!("../../../../templates/hello/src/lib.rs"),
             },
             TemplateFile {
                 path: "README.md",
-                contents: include_str!("../../../../templates/minimal/README.md"),
+                contents: include_str!("../../../../templates/hello/README.md"),
             },
         ],
     },
     Template {
         name: "notes",
-        teaches: "per-caller storage, and why storage is not per-caller by default",
+        teaches: "per-caller storage, forms that POST, and escaping stored values",
+        works_deployed: false,
         files: &[
             TemplateFile {
                 path: "Cargo.toml",
@@ -96,38 +102,16 @@ const TEMPLATES: &[Template] = &[
             },
         ],
     },
-    Template {
-        name: "webhook",
-        teaches: "reading a request body, and using a secret",
-        files: &[
-            TemplateFile {
-                path: "Cargo.toml",
-                contents: include_str!("../../../../templates/webhook/Cargo.toml"),
-            },
-            TemplateFile {
-                path: "clwd.toml",
-                contents: include_str!("../../../../templates/webhook/clwd.toml"),
-            },
-            TemplateFile {
-                path: "src/lib.rs",
-                contents: include_str!("../../../../templates/webhook/src/lib.rs"),
-            },
-            TemplateFile {
-                path: "README.md",
-                contents: include_str!("../../../../templates/webhook/README.md"),
-            },
-        ],
-    },
 ];
 
 /// The default when `--template` is not given.
-const DEFAULT_TEMPLATE: &str = "minimal";
+const DEFAULT_TEMPLATE: &str = "hello";
 
 /// The SDK path a template carries in the repository.
 ///
 /// Rewritten to an absolute path on the way out, because a relative path only
 /// resolves from inside `templates/`. This goes away when `clwd-sdk` is
-/// published — see clwdrun/clwd#66.
+/// published — see clwdrun/clwd#92.
 const TEMPLATE_SDK_PATH: &str = "path = \"../../crates/sdk\"";
 
 /// What a scaffolded project produced.
@@ -143,6 +127,44 @@ pub struct Scaffolded {
     pub name: String,
     /// Every file written, relative to the project root.
     pub files: Vec<String>,
+    /// Whether the template works when deployed today. See [`Listed`].
+    pub works_deployed: bool,
+    /// The commands to run next, in order: into the project, run it locally,
+    /// deploy it.
+    pub next: Vec<String>,
+}
+
+/// One template, as `--list` shows it.
+#[derive(Debug, serde::Serialize)]
+#[non_exhaustive]
+pub struct Listed {
+    pub name: &'static str,
+    /// One line: what the template teaches.
+    pub teaches: &'static str,
+    /// Whether an app made from it works when deployed today. When `false`,
+    /// its README names what deploying it waits on.
+    pub works_deployed: bool,
+}
+
+/// Every template, for `--list`. Serializes as a bare array.
+#[must_use]
+#[derive(Debug, serde::Serialize)]
+#[serde(transparent)]
+pub struct Listing(pub Vec<Listed>);
+
+impl std::fmt::Display for Listing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, t) in self.0.iter().enumerate() {
+            if i > 0 {
+                writeln!(f)?;
+            }
+            write!(f, "{:<8} {}", t.name, t.teaches)?;
+            if !t.works_deployed {
+                write!(f, " (local only for now; see its README)")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Names that work as a crate name **and** as an app name.
@@ -258,10 +280,19 @@ pub fn execute(
     let template = find(template.unwrap_or(DEFAULT_TEMPLATE))?;
 
     let project = dir.join(name);
-    if project.exists() {
+    // An empty directory is fine — making one first is an ordinary thing to
+    // do. Anything in it is refused rather than merged into or overwritten.
+    let occupied = match std::fs::read_dir(&project) {
+        Ok(mut entries) => entries.next().is_some(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        // Exists but cannot be listed: most often a file of that name.
+        Err(_) => true,
+    };
+    if occupied {
         return Err(CliError::InvalidArgument {
             what: format!(
-                "{} already exists. `clwd init` will not write into an existing directory",
+                "{} already exists and is not an empty directory. `clwd init` will not \
+                 write into it",
                 project.display()
             ),
         });
@@ -296,18 +327,38 @@ pub fn execute(
         p.finish();
     }
 
+    let cd = project
+        .strip_prefix(".")
+        .unwrap_or(&project)
+        .display()
+        .to_string();
     Ok(Scaffolded {
+        next: vec![
+            format!("cd {cd}"),
+            "clwd dev".to_owned(),
+            "clwd deploy".to_owned(),
+        ],
         project,
         template: template.name.to_owned(),
         name: name.to_owned(),
         files: written,
+        works_deployed: template.works_deployed,
     })
 }
 
-/// Every template's name and what it teaches, for `--list`.
-#[must_use]
-pub fn list() -> Vec<(&'static str, &'static str)> {
-    TEMPLATES.iter().map(|t| (t.name, t.teaches)).collect()
+/// Every template, what it teaches, and whether it works deployed, for
+/// `--list`.
+pub fn list() -> Listing {
+    Listing(
+        TEMPLATES
+            .iter()
+            .map(|t| Listed {
+                name: t.name,
+                teaches: t.teaches,
+                works_deployed: t.works_deployed,
+            })
+            .collect(),
+    )
 }
 
 impl std::fmt::Display for Scaffolded {
@@ -317,7 +368,18 @@ impl std::fmt::Display for Scaffolded {
             writeln!(f, "  {file}")?;
         }
         writeln!(f)?;
-        writeln!(f, "  cd {} && clwd build . && clwd run app.clwd", self.name)
+        writeln!(f, "next:")?;
+        for command in &self.next {
+            writeln!(f, "  {command}")?;
+        }
+        if !self.works_deployed {
+            write!(
+                f,
+                "\n{} runs under `clwd dev`; deploying it waits on what its README names.",
+                self.template
+            )?;
+        }
+        Ok(())
     }
 }
 

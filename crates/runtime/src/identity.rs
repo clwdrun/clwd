@@ -1,4 +1,4 @@
-//! Who is calling. Mirrors `wit/deps/identity/identity.wit`.
+//! Who is calling. Mirrors `crates/sdk/wit/deps/identity/identity.wit`.
 //!
 //! Nothing here is app-level. Capabilities live in the bundle manifest, sealed
 //! by the digest `spawn` is given, and are deliberately *not* reachable through

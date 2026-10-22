@@ -50,8 +50,9 @@ pub enum Command {
     /// Scaffold a new app from a template
     Init {
         /// The app's name. Becomes the directory, the crate name, and
-        /// `[app] name` in clwd.toml.
-        name: String,
+        /// `[app] name` in clwd.toml. Not needed with `--list`.
+        #[arg(required_unless_present = "list")]
+        name: Option<String>,
 
         /// Which template to start from. `--list` shows them.
         #[arg(long)]
@@ -61,8 +62,10 @@ pub enum Command {
         #[arg(long, default_value = ".")]
         into: std::path::PathBuf,
 
-        /// List the templates and what each teaches, then exit.
-        #[arg(long, conflicts_with_all = ["template", "into"])]
+        /// List the templates, what each teaches, and whether it works when
+        /// deployed today, then exit. With `--json`, an array of
+        /// `{name, teaches, works_deployed}`.
+        #[arg(long, conflicts_with_all = ["name", "template", "into"])]
         list: bool,
     },
     /// Run an app locally in a sandbox

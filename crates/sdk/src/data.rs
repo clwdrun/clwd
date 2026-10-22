@@ -176,10 +176,11 @@ fn key_grammar_permits(segment: &str) -> bool {
 /// silently sharing a namespace is a data leak rather than a formatting
 /// problem.
 ///
-/// The second case cannot happen locally, where the subject is always `local`.
-/// It becomes reachable when `platform#11` supplies real subject ids, and an
-/// app that sees it is looking at a platform-side problem rather than anything
-/// its caller did — worth logging as such, not reporting as "sign in".
+/// The second case does not happen locally, where the subject is always
+/// `local`, nor with the subjects a deployed app receives today, which are
+/// lowercase UUIDs. An app that sees it is looking at a platform-side problem
+/// rather than anything its caller did — worth logging as such, not reporting
+/// as "sign in".
 #[must_use]
 pub fn for_caller(caller: &Caller) -> Option<Namespace> {
     let subject = caller.subject()?;

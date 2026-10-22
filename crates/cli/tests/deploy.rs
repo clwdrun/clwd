@@ -18,7 +18,7 @@ const VERSION: &str = "018f5b2a-1111-7000-8000-000000000001";
 const LABEL: &str = "deploy-app";
 const URL: &str = "https://deploy-app.acme.apps.example";
 
-/// The shared project, scaffolded from the `minimal` template on first use.
+/// The shared project, scaffolded from the `hello` template on first use.
 fn project() -> (MutexGuard<'static, ()>, &'static Path) {
     static LOCK: Mutex<()> = Mutex::new(());
     static PROJECT: OnceLock<PathBuf> = OnceLock::new();
@@ -29,7 +29,7 @@ fn project() -> (MutexGuard<'static, ()>, &'static Path) {
         let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("deploy");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch");
-        clwd_cli::commands::init::execute(&dir, LABEL, Some("minimal"), None)
+        clwd_cli::commands::init::execute(&dir, LABEL, Some("hello"), None)
             .expect("init")
             .project
     });

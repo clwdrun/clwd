@@ -69,7 +69,7 @@ on which one occurred, with this exact shape:
 
 ## Host-interface expectations
 
-The guest calls three first-party interfaces. Their contracts are in `wit/`; the
+The guest calls three first-party interfaces. Their contracts are in `crates/sdk/wit/`; the
 points that matter for the fixture:
 
 - **`clwd:identity`** — ambient (`get-caller()` takes no argument). `/whoami`

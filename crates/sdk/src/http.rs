@@ -209,7 +209,35 @@ impl Response {
         self
     }
 
+    /// Send `page` as HTML, and finish the exchange.
+    ///
+    /// Sets `Content-Type: text/html; charset=utf-8` and
+    /// `X-Content-Type-Options: nosniff`. A page can only be built through
+    /// [`Html`](crate::Html), so every value in it was escaped — see that type
+    /// for the contexts escaping does not cover.
+    pub fn html(self, out: ResponseOutparam, page: &crate::Html) {
+        self.header("content-type", b"text/html; charset=utf-8")
+            .header("x-content-type-options", b"nosniff")
+            .send(out, page.as_str().as_bytes());
+    }
+
+    /// Send `body` as plain text, and finish the exchange.
+    ///
+    /// Sets `Content-Type: text/plain; charset=utf-8` and
+    /// `X-Content-Type-Options: nosniff`, so a browser shows stored or submitted
+    /// text as text even when it looks like markup.
+    pub fn text(self, out: ResponseOutparam, body: &str) {
+        self.header("content-type", b"text/plain; charset=utf-8")
+            .header("x-content-type-options", b"nosniff")
+            .send(out, body.as_bytes());
+    }
+
     /// Send this response with `body`, and finish the exchange.
+    ///
+    /// No headers are added. For anything a browser will render, use
+    /// [`html`](Self::html) or [`text`](Self::text): a body with no
+    /// `Content-Type` is sniffed, and user-supplied bytes that look like markup
+    /// then run as markup.
     ///
     /// Consumes both the response and the [`ResponseOutparam`], so it can
     /// happen exactly once and cannot be interleaved with anything. The whole

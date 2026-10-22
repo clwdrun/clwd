@@ -12,7 +12,7 @@ use clwd_runtime::wasm::{
 };
 use clwd_runtime::{Body, Request};
 
-/// A real component built from `wit/world.wit`. Rebuild with
+/// A real component built from `crates/sdk/wit/world.wit`. Rebuild with
 /// `just rebuild-guest`.
 pub const GUEST: &[u8] = include_bytes!("../fixtures/app.wasm");
 /// The same guest built against `clwd:identity@0.1.0`, before roles and groups

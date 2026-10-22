@@ -33,7 +33,7 @@ wasmtime::component::bindgen!({
             import clwd:app-data/store@0.1.0;
         }
     ",
-    path: "../../wit",
+    path: "../sdk/wit",
     // Only app-data is async: it calls a store that may do I/O. Identity and
     // secrets read per-`Store` state and stay synchronous, which also leaves
     // #54's identity host untouched.
@@ -190,7 +190,7 @@ impl clwd::secrets::broker::Host for StoreState {
     /// instance may see was resolved before it started. `None` covers both "no
     /// such secret" and "not yours" because they are the same value, not
     /// because this function treats them alike — see DECISION 1 in
-    /// `wit/deps/secrets/secrets.wit`.
+    /// `crates/sdk/wit/deps/secrets/secrets.wit`.
     fn get(&mut self, name: String) -> Option<Vec<u8>> {
         self.secrets.get(&name).cloned()
     }

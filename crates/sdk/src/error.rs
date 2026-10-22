@@ -27,8 +27,7 @@
 ///
 /// One invocation is the single source for the variant, its status, and its
 /// body text — so a new error cannot be added without deciding all three, and
-/// they cannot drift apart. This is the shape `platform#2` uses for the control
-/// plane's catalogue, for the same reason.
+/// they cannot drift apart.
 macro_rules! define_error {
     ($( $(#[$doc:meta])* $variant:ident => $status:literal, $message:literal; )*) => {
         /// Something an app could not do, and what the caller should be told.
@@ -111,6 +110,6 @@ impl Error {
     /// };
     /// ```
     pub fn respond(self, out: crate::http::ResponseOutparam) {
-        crate::http::Response::new(self.status()).send(out, self.message().as_bytes());
+        crate::http::Response::new(self.status()).text(out, self.message());
     }
 }

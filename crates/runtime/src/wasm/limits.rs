@@ -43,7 +43,7 @@ use crate::error::Error;
 /// allocates host-side storage for references without touching linear memory.
 ///
 /// Measured rather than guessed: the reference component built from
-/// `wit/world.wit` peaks at **76** table elements serving a request. This is
+/// `crates/sdk/wit/world.wit` peaks at **76** table elements serving a request. This is
 /// three orders of magnitude above that, which is headroom for a component
 /// doing real work rather than a cap anyone is expected to approach.
 pub(super) const MAX_TABLE_ELEMENTS: usize = 100_000;
