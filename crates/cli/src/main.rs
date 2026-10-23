@@ -10,6 +10,7 @@ use std::pin::pin;
 use std::process::ExitCode;
 
 use clap::Parser;
+use clwd_cli::cli::McpAction;
 use clwd_cli::{AppAction, Cli, CliError, Command, Format, Progress, SecretsAction, commands};
 use futures_core::Stream;
 use serde::Serialize;
@@ -22,6 +23,10 @@ use serde::Serialize;
 /// behaviour rather than inventing a status.
 const USAGE: u8 = 2;
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the CLI's renderer owns stdout; everything it calls writes into the sink it is given"
+)]
 fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
@@ -29,9 +34,16 @@ fn main() -> ExitCode {
     };
     let format = cli.format();
 
-    let outcome = {
-        let mut stdout = io::stdout().lock();
-        dispatch(&cli, format, &mut stdout).and_then(|()| stdout.flush().map_err(internal))
+    let outcome = match &cli.command {
+        // Before stdout is locked: the transport writes to it from another
+        // thread, and would wait on this one's lock forever.
+        Command::Mcp {
+            action: McpAction::Serve { root },
+        } => mcp(root.as_deref()),
+        _ => {
+            let mut stdout = io::stdout().lock();
+            dispatch(&cli, format, &mut stdout).and_then(|()| stdout.flush().map_err(internal))
+        }
     };
 
     match outcome {
@@ -163,7 +175,13 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
             platform,
         } => emit(
             format,
-            commands::deploy::execute(project, org.as_deref(), platform.as_deref(), progress),
+            commands::deploy::execute(
+                project,
+                org.as_deref(),
+                platform.as_deref(),
+                commands::deploy::Control::default(),
+                progress,
+            ),
             out,
         ),
         Command::Logs {
@@ -192,13 +210,50 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
             logs(options, progress, format, out)
         }
         Command::Secrets { action, project } => secrets(action, project, format, out),
-        Command::Mcp => emit(format, commands::mcp::execute(progress), out),
+        // Served by `main` before stdout is locked; see there.
+        Command::Mcp { .. } => Err(CliError::Internal {
+            source: anyhow::anyhow!("`clwd mcp` is served before dispatch"),
+        }),
     };
 
     if let Some(progress) = progress {
         progress.finish();
     }
     result
+}
+
+/// `clwd mcp serve`: MCP on stdin and stdout until stdin closes. `tracing`
+/// events, rmcp's among them, go to stderr; stdout carries protocol messages
+/// and nothing else.
+#[cfg(feature = "mcp")]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the MCP transport owns stdout: every byte on it is a protocol message"
+)]
+fn mcp(root: Option<&std::path::Path>) -> Result<(), CliError> {
+    let _ = tracing_subscriber::fmt()
+        .with_writer(io::stderr)
+        .with_ansi(false)
+        .try_init();
+    let root = match root {
+        Some(root) => root.to_path_buf(),
+        None => std::env::current_dir().map_err(internal)?,
+    };
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(internal)?
+        .block_on(commands::mcp::serve(
+            &root,
+            tokio::io::stdin(),
+            tokio::io::stdout(),
+        ))
+}
+
+/// Without `mcp` the subcommand still parses, and says so.
+#[cfg(not(feature = "mcp"))]
+fn mcp(_root: Option<&std::path::Path>) -> Result<(), CliError> {
+    Err(CliError::NotImplemented { command: "mcp" })
 }
 
 /// Drive the log stream to exhaustion, rendering each line as it arrives.

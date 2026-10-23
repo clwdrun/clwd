@@ -32,7 +32,6 @@
 
 use std::ffi::OsString;
 use std::path::Path;
-use std::process::Command;
 
 use crate::error::CliError;
 
@@ -112,7 +111,7 @@ impl Toolchain {
             return Ok(false);
         };
 
-        let out = Command::new(program)
+        let out = super::process::command(program)
             .arg("strip")
             .arg(input)
             .arg("-o")
@@ -144,7 +143,7 @@ impl Toolchain {
 /// indistinguishable from an absent one until it is run, and the failure would
 /// otherwise surface in the middle of a build.
 fn probe(program: &str) -> Option<OsString> {
-    Command::new(program)
+    super::process::command(program)
         .arg("--version")
         .output()
         .ok()

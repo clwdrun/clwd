@@ -17,8 +17,15 @@ path = "src/lib.rs"
 name = "clwd"
 path = "src/main.rs"
 
+# Needs the panicking tool, so only built when that feature is on;
+# `just mcp-panic` and CI run it.
+[[test]]
+name = "mcp_panic"
+path = "tests/mcp_panic.rs"
+required-features = ["mcp-test-panic"]
+
 [features]
-default = ["terminal", "run"]
+default = ["terminal", "run", "mcp"]
 # Everything that draws to a TTY. `cargo build -p clwd-cli --lib
 # --no-default-features` is the assertion that the library half does not.
 terminal = ["dep:indicatif", "clap/color", "clap/suggestions"]
@@ -47,6 +54,13 @@ run = [
     "dep:bytes",
     "dep:tracing-subscriber",
 ]
+# `clwd mcp serve` (#32): the MCP server over stdio. Its subscriber writes
+# rmcp's `tracing` events to stderr, and on Unix it kills a cancelled build's
+# whole process group, not just cargo.
+mcp = ["dep:rmcp", "dep:tokio-util", "dep:tracing", "dep:tracing-subscriber", "dep:rustix"]
+# Test-only: adds a tool that panics, so a test can show a panic never reaches
+# stdout. `just mcp-release-bare` asserts a release build does not contain it.
+mcp-test-panic = ["mcp"]
 
 [dependencies]
 clap = { workspace = true }
@@ -101,10 +115,15 @@ zeroize = { workspace = true }
 # unconditional would charge everyone for a backend nobody currently uses.
 keyring = { workspace = true, optional = true }
 tokio = { workspace = true }
+rmcp = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Doc generation only. `tests/error_table.rs` builds docs/error-codes.md from

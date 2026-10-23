@@ -21,7 +21,7 @@ pub enum Format {
 /// The JSON error envelope. #31 owns the guarantee that this shape and the
 /// codes inside it are stable; #14 only owns emitting them.
 #[derive(Debug, Serialize)]
-struct ErrorEnvelope<'a> {
+pub(crate) struct ErrorEnvelope<'a> {
     code: &'a str,
     message: String,
     hint: Option<&'a str>,

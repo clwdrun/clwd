@@ -14,11 +14,12 @@
 
 use std::io::{BufRead as _, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use crate::Progress;
 use crate::error::CliError;
 
+use super::process::{self, Cancel, Tail};
 use super::toolchain::{TARGET, TARGET_INSTALL};
 
 /// Settings the release profile should carry, and what each is worth.
@@ -88,8 +89,18 @@ pub fn profile_warnings(cargo_toml: &str) -> Vec<String> {
 }
 
 /// Compile the project to a wasm component and return the artifact's path.
-pub fn compile(project: &Path, progress: Option<&dyn Progress>) -> Result<PathBuf, CliError> {
-    let mut child = Command::new("cargo")
+///
+/// cargo's stderr is inherited, so a person sees diagnostics as they appear,
+/// unless `output` is given: then it is kept there instead, for a caller with
+/// no terminal. `cancel` lets another thread stop the build.
+pub fn compile(
+    project: &Path,
+    progress: Option<&dyn Progress>,
+    output: Option<&Tail>,
+    cancel: Option<&Cancel>,
+) -> Result<PathBuf, CliError> {
+    let mut command = process::command("cargo");
+    command
         .current_dir(project)
         .args([
             "build",
@@ -102,13 +113,24 @@ pub fn compile(project: &Path, progress: Option<&dyn Progress>) -> Result<PathBu
             "--message-format=json-render-diagnostics",
         ])
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|e| CliError::ToolchainMissing {
-            tool: "cargo",
-            install: "install Rust from https://rustup.rs",
-            cause: e.to_string(),
-        })?;
+        .stderr(if output.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::inherit()
+        });
+    let spawned = match cancel {
+        Some(cancel) => cancel.spawn(&mut command),
+        None => command.spawn(),
+    };
+    let mut child = spawned.map_err(|e| CliError::ToolchainMissing {
+        tool: "cargo",
+        install: "install Rust from https://rustup.rs",
+        cause: e.to_string(),
+    })?;
+    let stderr = match (output, child.stderr.take()) {
+        (Some(tail), Some(stderr)) => Some(tail.drain(stderr)),
+        _ => None,
+    };
 
     let mut artifact = None;
     if let Some(stdout) = child.stdout.take() {
@@ -137,7 +159,15 @@ pub fn compile(project: &Path, progress: Option<&dyn Progress>) -> Result<PathBu
         }
     }
 
-    let status = child.wait().map_err(|e| CliError::BuildFailed {
+    let status = child.wait();
+    if let Some(cancel) = cancel {
+        cancel.release();
+    }
+    if let Some(stderr) = stderr {
+        // Ends when the pipe closes, which the child's exit guarantees.
+        let _ = stderr.join();
+    }
+    let status = status.map_err(|e| CliError::BuildFailed {
         step: "cargo build",
         detail: e.to_string(),
     })?;
@@ -146,8 +176,8 @@ pub fn compile(project: &Path, progress: Option<&dyn Progress>) -> Result<PathBu
         return Err(CliError::BuildFailed {
             step: "cargo build",
             // cargo's diagnostics already went to the inherited stderr, where
-            // the reader has seen them. Repeating them here would double every
-            // compile error.
+            // the reader has seen them, or to the caller's tail. Repeating them
+            // here would double every compile error.
             detail: format!(
                 "cargo exited unsuccessfully. If it reported a missing target, run `{TARGET_INSTALL}`"
             ),

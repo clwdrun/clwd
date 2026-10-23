@@ -101,8 +101,14 @@ fn publish_is_callable_in_process_and_returns_a_typed_error() {
 #[test]
 fn a_command_accepts_a_progress_sink_that_is_not_a_terminal() {
     let recorder = Recorder::default();
-    let err = commands::mcp::execute(Some(&recorder)).expect_err("mcp has no body yet");
-    assert_eq!(err.code(), "cli.not_implemented");
+    let err = commands::build::execute(
+        std::path::Path::new("/nonexistent/nowhere"),
+        None,
+        true,
+        Some(&recorder),
+    )
+    .expect_err("there is no project at that path");
+    assert_eq!(err.code(), "cli.not_found");
 }
 
 /// Same property as `run` and `build`: callable in process, typed error out.
@@ -119,29 +125,9 @@ fn dev_is_callable_in_process_and_returns_a_typed_error() {
 }
 
 #[test]
-fn every_command_reports_either_a_value_or_a_stable_code() {
-    // Each arm calls a distinct command, so a command added to the surface
-    // without a `Result<_, CliError>` signature will not compile here.
-    //
-    // `run`, `build`, `secrets`, `init`, `publish`, `dev` and `logs` are no longer in this list: they
-    // have bodies, so they do not return `cli.not_implemented` and asserting that they do
-    // would be asserting they stay unbuilt. Each is covered by its own
-    // `*_is_callable_in_process_and_returns_a_typed_error` above, and end to end
-    // by `tests/run.rs` and `tests/build.rs`. Every command that gains a body
-    // leaves this list the same way.
-    // Owned rather than borrowed: `code()` borrows the error, and each error
-    // here is a temporary, so holding a `&str` across the array would outlive it.
-    let codes: [String; 1] = [commands::mcp::execute(None).unwrap_err().code().to_owned()];
-    assert!(
-        codes.iter().all(|code| code == "cli.not_implemented"),
-        "got {codes:?}"
-    );
-}
-
-#[test]
 fn errors_render_into_a_caller_supplied_sink() {
     // Any error will do; this test is about the sink, not the command.
-    let err = commands::mcp::execute(None).unwrap_err();
+    let err = CliError::NotImplemented { command: "x" };
 
     let mut buf: Vec<u8> = Vec::new();
     Format::Json
@@ -171,7 +157,7 @@ fn rendering_never_reaches_for_stdout() {
 
     // Any error will do; this test is about where the renderer writes, not
     // about which command produced the failure.
-    let err = commands::mcp::execute(None).unwrap_err();
+    let err = CliError::NotImplemented { command: "x" };
     let mut broken = Broken;
     assert!(Format::Human.error(&err, &mut broken).is_err());
 }
