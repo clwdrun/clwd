@@ -125,7 +125,7 @@ pub async fn publish(
     bundle: Vec<u8>,
 ) -> Result<Published, CliError> {
     let endpoint = url.versions_endpoint(app)?;
-    let client = reqwest::Client::builder().build().map_err(pure_network)?;
+    let client = url.client().build().map_err(pure_network)?;
 
     let response = client
         .post(endpoint)
@@ -199,7 +199,7 @@ pub async fn create_app(
     host_label: &str,
 ) -> Result<CreatedApp, CliError> {
     let endpoint = url.apps_endpoint(org)?;
-    let client = reqwest::Client::builder().build().map_err(pure_network)?;
+    let client = url.client().build().map_err(pure_network)?;
 
     let response = client
         .post(endpoint)
@@ -239,7 +239,8 @@ pub async fn app_by_label(
     host_label: &str,
 ) -> Result<AppSummary, CliError> {
     let endpoint = url.app_by_label_endpoint(org, host_label)?;
-    get_json(reqwest::Client::new().get(endpoint), token).await
+    let client = url.client().build().map_err(pure_network)?;
+    get_json(client.get(endpoint), token).await
 }
 
 /// One page of an app's log, as the platform returns it.
@@ -325,6 +326,24 @@ async fn get_json<T: serde::de::DeserializeOwned>(
 
 async fn platform_error(response: reqwest::Response) -> CliError {
     let status = response.status();
+    // The platform API never redirects, and the client follows none, so a
+    // redirect is something between here and the platform, or a wrong URL. It
+    // is reported rather than obeyed: following it would carry the token to
+    // wherever the response pointed.
+    if status.is_redirection() {
+        let to = response
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("nowhere");
+        return CliError::Net {
+            retryable: false,
+            detail: format!(
+                "the platform answered {status}, a redirect to {to:?}, which clwd does not \
+                 follow; check the platform URL"
+            ),
+        };
+    }
     let retry_after = response
         .headers()
         .get(reqwest::header::RETRY_AFTER)
@@ -574,6 +593,34 @@ mod tests {
             app.to_string()
                 .starts_with(&format!("app notes already exists ({APP})")),
             "{app}"
+        );
+    }
+
+    /// A redirect is reported, never followed: following it would carry the
+    /// token to wherever the response pointed. The target sees no request.
+    ///
+    /// Invariant: CLI-11.
+    #[tokio::test]
+    async fn a_redirect_is_reported_and_not_followed() {
+        let (target, target_server) = serve_once(200, "OK", "", app_body(true)).await;
+        let location: &'static str =
+            Box::leak(format!("Location: {target}/elsewhere\r\n").into_boxed_str());
+        let (base, _server) = serve_once(302, "Found", location, "{}".to_owned()).await;
+        let err = create(&base).await.expect_err("a redirect is an error");
+        assert_eq!(err.code(), "net.unreachable");
+        assert!(!err.retryable(), "a redirect does not go away on retry");
+        let message = err.to_string();
+        assert!(message.contains("302"), "{message}");
+        assert!(
+            message.contains(&target),
+            "names where it pointed: {message}"
+        );
+        assert!(!message.contains(TOKEN), "{message}");
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(200), target_server)
+                .await
+                .is_err(),
+            "the redirect target received no request"
         );
     }
 

@@ -369,3 +369,26 @@ fn an_invalid_host_label_fails_before_any_build_or_request() {
     );
     assert_no_request(&listener);
 }
+
+/// A plain-http platform URL that is not loopback is refused before anything
+/// is built or sent, and the token is not in the error.
+///
+/// Invariant: CLI-11.
+#[test]
+fn a_plain_http_platform_url_is_refused_before_any_build_or_request() {
+    let project = bare_project("insecure", "[app]\nhost_label = \"notes\"\n");
+
+    let out = deploy(&project, "http://platform.example", true);
+    assert!(!out.status.success());
+    let err = stderr_json(&out);
+    assert_eq!(err["code"], "cli.insecure_platform_url");
+    assert_eq!(err["retryable"], false);
+    let message = err["message"].as_str().unwrap_or_default();
+    assert!(message.contains("http://platform.example"), "{message}");
+    assert!(out.stdout.is_empty());
+    assert!(!String::from_utf8_lossy(&out.stderr).contains(TOKEN));
+    assert!(
+        !project.join("target").exists(),
+        "nothing was built: the URL is checked first"
+    );
+}

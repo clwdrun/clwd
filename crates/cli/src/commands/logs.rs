@@ -300,7 +300,8 @@ async fn read(
     mut query: LogQuery,
     follow: bool,
 ) {
-    let client = match reqwest::Client::builder()
+    let client = match url
+        .client()
         .timeout(Duration::from_secs(WAIT_SECS + 15))
         .build()
     {

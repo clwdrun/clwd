@@ -60,6 +60,7 @@ signal instead.
 | [`cli.manifest_invalid`](#climanifest_invalid) | `fix_input` | yes |
 | [`cli.toolchain_missing`](#clitoolchain_missing) | `fix_permissions` | yes |
 | [`cli.build_failed`](#clibuild_failed) | `fix_input` | yes |
+| [`cli.insecure_platform_url`](#cliinsecure_platform_url) | `fix_input` | yes |
 | [`cli.deploy_in_progress`](#clideploy_in_progress) | `retry` | yes |
 | [`cli.internal`](#cliinternal) | `report_bug` | yes |
 | [`net.unreachable`](#netunreachable) | `retry` | yes |
@@ -185,6 +186,16 @@ A step of the build ran and reported failure. The commonest cause is that the ap
 **What to do:** Read the output printed above the error — it comes from the step that failed and is more specific than anything clwd can add. Fix what it reports, then build again.
 
 **Hint** (in the envelope): Fix the first error in the build output above, then run `clwd build` again.
+
+*Recovery:* `fix_input` · *Reachable:* yes
+
+### `cli.insecure_platform_url`
+
+The platform URL is plain http and its host is not this machine. Every request to the platform carries your token, so over http it would cross the network readable by anyone on the path. Nothing was sent.
+
+**What to do:** Use the platform's https:// URL, in `--platform` or `$CLWD_PLATFORM_URL`. Plain http:// is accepted only for 127.0.0.0/8, ::1 and localhost, for a platform running on this machine.
+
+**Hint** (in the envelope): use an https:// platform URL; plain http:// is accepted only for a loopback address
 
 *Recovery:* `fix_input` · *Reachable:* yes
 

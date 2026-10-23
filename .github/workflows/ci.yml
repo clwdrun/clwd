@@ -167,6 +167,21 @@ jobs:
           fi
           echo "ok: stdin has exactly two readers, both in main.rs"
 
+      # Mirrors `just platform-client`: every HTTP client is built by
+      # PlatformUrl::client, which follows no redirect and keeps the token on
+      # https for a remote platform.
+      # Invariant: CLI-11.
+      - name: one HTTP client constructor
+        run: |
+          sites=$(grep -rn --include='*.rs' -E 'Client::(new|builder)\(|ClientBuilder::new\(' crates/cli/src)
+          if [ "$(printf '%s\n' "$sites" | grep -c .)" -ne 1 ] \
+             || ! printf '%s\n' "$sites" | grep -q '^crates/cli/src/platform/mod.rs:'; then
+            echo "::error::an HTTP client is built outside PlatformUrl::client"
+            printf '%s\n' "$sites"
+            exit 1
+          fi
+          echo "ok: one HTTP client constructor, PlatformUrl::client"
+
       # Mirrors `just wasmtime-features`: the exact reviewed feature set.
       # Invariant: RT-16.
       - name: wasmtime builds with exactly the reviewed features

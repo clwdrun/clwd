@@ -230,6 +230,16 @@ const TABLE: &[Row] = &[
         action: Recovery::FixInput,
     },
     Row {
+        code: "cli.insecure_platform_url",
+        meaning: "The platform URL is plain http and its host is not this machine. Every \
+                  request to the platform carries your token, so over http it would cross \
+                  the network readable by anyone on the path. Nothing was sent.",
+        recovery: "Use the platform's https:// URL, in `--platform` or `$CLWD_PLATFORM_URL`. \
+                   Plain http:// is accepted only for 127.0.0.0/8, ::1 and localhost, for \
+                   a platform running on this machine.",
+        action: Recovery::FixInput,
+    },
+    Row {
         code: "cli.deploy_in_progress",
         meaning: "Another `clwd deploy` of the same project is running, from this process or \
                   another. Deploys of one project never overlap: interleaved, either one's \
@@ -1040,6 +1050,7 @@ fn recovery_agrees_with_retryable() {
         CliError::NotFound { what: "x".into() },
         CliError::NotImplemented { command: "x" },
         CliError::Config { what: "x".into() },
+        CliError::InsecurePlatformUrl { url: "x".into() },
         CliError::ManifestInvalid { what: "x".into() },
         CliError::ToolchainMissing {
             tool: "x",

@@ -416,7 +416,11 @@ async fn read_logs(raw: Value) -> Result<Value, CliError> {
         limit: Some(limit),
         wait_secs: 0,
     };
-    let page = platform::read_logs(&reqwest::Client::new(), &url, &app, &token, &query).await?;
+    let client = url
+        .client()
+        .build()
+        .map_err(|e| CliError::Internal { source: e.into() })?;
+    let page = platform::read_logs(&client, &url, &app, &token, &query).await?;
     Ok(json!({ "lines": to_value(&page.lines)?, "cursor": page.cursor }))
 }
 

@@ -408,6 +408,24 @@ question and waits for an answer.
 Enforced by `just stdin-readers` with its CI step, and
 `init_with_stdin_closed_scaffolds_and_prints_the_next_commands`.
 
+### CLI-11 · The token crosses a network only over https
+
+A platform URL must be `https`, or plain `http` to a loopback host: an
+address in `127.0.0.0/8`, `::1`, or exactly `localhost`, judged from the
+parsed host. Any other plain-http URL is refused with
+`cli.insecure_platform_url` before anything is built or sent. Every HTTP
+client the CLI builds comes from `PlatformUrl::client`, which follows no
+redirect (a redirect is reported as an error naming where it pointed) and,
+for a platform that is not loopback, refuses to send any request over plain
+http.
+
+Enforced by `plain_http_is_accepted_only_for_a_loopback_host`,
+`a_client_for_a_remote_platform_never_sends_plain_http`
+(`crates/cli/src/platform/mod.rs`), `a_redirect_is_reported_and_not_followed`
+(`crates/cli/src/platform/client.rs`),
+`a_plain_http_platform_url_is_refused_before_any_build_or_request`
+(`crates/cli/tests/deploy.rs`), and `just platform-client` with its CI step.
+
 ## MCP server (`clwd mcp serve`)
 
 ### MCP-1 · stdout carries protocol messages only

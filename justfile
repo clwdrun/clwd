@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare stdout-owners spawn-confined stdin-readers mcp-panic mcp-release-bare cli-deps spec-intact guest-intact templates-build bundle-deps trait-deps wasm-contained wasmtime-features invariants deny
+check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare stdout-owners spawn-confined stdin-readers platform-client mcp-panic mcp-release-bare cli-deps spec-intact guest-intact templates-build bundle-deps trait-deps wasm-contained wasmtime-features invariants deny
 
 # Secret scan over full history. GitHub's own scanning and push protection are
 # Advanced Security features and are not available on a private repository, so
@@ -138,6 +138,23 @@ stdin-readers:
       exit 1
     fi
     echo "ok: stdin has exactly two readers, both in main.rs"
+
+# Every request to the platform carries the token, so every HTTP client in the
+# CLI is built by `PlatformUrl::client`, which follows no redirect and, for a
+# remote platform, sends nothing over plain http. A client built anywhere else
+# would have neither property.
+# Invariant: CLI-11.
+platform-client:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    sites=$(grep -rn --include='*.rs' -E 'Client::(new|builder)\(|ClientBuilder::new\(' crates/cli/src)
+    if [ "$(printf '%s\n' "$sites" | grep -c .)" -ne 1 ] \
+       || ! printf '%s\n' "$sites" | grep -q '^crates/cli/src/platform/mod.rs:'; then
+      echo "error: an HTTP client is built outside PlatformUrl::client:"
+      printf '%s\n' "$sites"
+      exit 1
+    fi
+    echo "ok: one HTTP client constructor, PlatformUrl::client"
 
 # The panic test needs the test-only tool, so it is its own target with
 # `mcp-test-panic` as a required feature; `cargo test --workspace` does not

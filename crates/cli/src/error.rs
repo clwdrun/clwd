@@ -186,6 +186,13 @@ define_cli_error! {
     Config { what: String } => "cli.config",
         "check the config file the message names; delete it to start from defaults";
 
+    /// A plain `http://` platform URL whose host is not loopback. Every
+    /// request carries the platform token, so it would cross the network in
+    /// clear text. Refused before any request is made.
+    #[error("the platform URL {url} is not https; the token would be sent in clear text")]
+    InsecurePlatformUrl { url: String } => "cli.insecure_platform_url",
+        "use an https:// platform URL; plain http:// is accepted only for a loopback address";
+
     /// The project's `clwd.toml` is malformed, contradictory, or grants
     /// something the format does not accept.
     ///
@@ -294,6 +301,7 @@ impl CliError {
             | Self::NotFound { .. }
             | Self::NotImplemented { .. }
             | Self::Config { .. }
+            | Self::InsecurePlatformUrl { .. }
             | Self::ManifestInvalid { .. }
             | Self::ToolchainMissing { .. }
             | Self::BuildFailed { .. }
@@ -316,6 +324,7 @@ pub(crate) mod tests {
             CliError::NotFound { what: "x".into() },
             CliError::NotImplemented { command: "x" },
             CliError::Config { what: "x".into() },
+            CliError::InsecurePlatformUrl { url: "x".into() },
             CliError::ManifestInvalid { what: "x".into() },
             CliError::ToolchainMissing {
                 tool: "x",
