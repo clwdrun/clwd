@@ -171,7 +171,7 @@ jobs:
       # repository; this tree states the reason instead.
       - name: no issue reference into another repository
         run: |
-          refs=$(git grep -nIoE '[A-Za-z][A-Za-z0-9_.-]*(/[A-Za-z0-9_.-]+)?#[0-9]+' | grep -vE ':clwdrun/clwd#[0-9]+$')
+          refs=$(git grep -nIoE '[A-Za-z][A-Za-z0-9_.-]*(/[A-Za-z0-9_.-]+)?#[0-9]+' | grep -vE ':clwdrun/clwd#[0-9]+$' || true)
           if [ -n "$refs" ]; then
             echo "::error::an issue reference into another repository:"
             printf '%s\n' "$refs"

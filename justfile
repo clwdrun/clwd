@@ -145,7 +145,7 @@ stdin-readers:
 no-cross-repo-refs:
     #!/usr/bin/env bash
     set -uo pipefail
-    refs=$(git grep -nIoE '[A-Za-z][A-Za-z0-9_.-]*(/[A-Za-z0-9_.-]+)?#[0-9]+' | grep -vE ':clwdrun/clwd#[0-9]+$')
+    refs=$(git grep -nIoE '[A-Za-z][A-Za-z0-9_.-]*(/[A-Za-z0-9_.-]+)?#[0-9]+' | grep -vE ':clwdrun/clwd#[0-9]+$' || true)
     if [ -n "$refs" ]; then
       echo "error: an issue reference into another repository:"
       printf '%s\n' "$refs"
