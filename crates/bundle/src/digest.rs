@@ -64,7 +64,7 @@ impl FromStr for Digest {
         }
 
         let mut out = [0u8; 32];
-        for (slot, pair) in out.iter_mut().zip(hex.as_bytes().chunks_exact(2)) {
+        for (slot, pair) in out.iter_mut().zip(hex.as_bytes().as_chunks::<2>().0) {
             let nibble = |c: u8| match c {
                 b'0'..=b'9' => Some(c - b'0'),
                 b'a'..=b'f' => Some(c - b'a' + 10),
