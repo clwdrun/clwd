@@ -5,8 +5,8 @@
 //! keeping them apart means `publish` never drags a compiler onto the path of an
 //! HTTP request. `clwd build` is one command away when a bundle is stale.
 //!
-//! Idempotency is the platform's, not the CLI's. `platform#7` keys a version on
-//! `(app_id, digest)`, so re-publishing identical bytes returns the existing
+//! Idempotency is the platform's, not the CLI's. The platform API keys a
+//! version on `(app_id, digest)`, so re-publishing identical bytes returns the existing
 //! version as a `200` rather than creating a second — surfaced here as
 //! `already existed`, not an error. A publish that times out after the platform
 //! committed but before the response arrived is safe to re-run for the same

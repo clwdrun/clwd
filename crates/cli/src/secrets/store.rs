@@ -5,8 +5,8 @@
 //! **This is for a development laptop. It is not for anything shared.** The
 //! file is protected by filesystem permissions and nothing else: anyone who can
 //! read it — another account with the same uid, a backup, a synced folder — has
-//! every secret in it in plaintext. The production answer is `platform#22`,
-//! which is a different store with a different threat model, reached through
+//! every secret in it in plaintext. The production answer is the platform's
+//! own secret store, which is a different store with a different threat model, reached through
 //! the same `SecretStore` trait.
 //!
 //! The threat model here is exactly one thing: **other users on the same

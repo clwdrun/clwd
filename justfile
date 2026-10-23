@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare stdout-owners spawn-confined stdin-readers platform-client mcp-panic mcp-release-bare cli-deps spec-intact guest-intact templates-build bundle-deps trait-deps wasm-contained wasmtime-features invariants deny
+check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare stdout-owners spawn-confined stdin-readers platform-client no-cross-repo-refs mcp-panic mcp-release-bare cli-deps spec-intact guest-intact templates-build bundle-deps trait-deps wasm-contained wasmtime-features invariants deny
 
 # Secret scan over full history. GitHub's own scanning and push protection are
 # Advanced Security features and are not available on a private repository, so
@@ -138,6 +138,20 @@ stdin-readers:
       exit 1
     fi
     echo "ok: stdin has exactly two readers, both in main.rs"
+
+# An issue reference into another repository (`repo#N`, `owner/repo#N`) ties
+# this public tree to numbers it does not control. State the reason instead.
+# References to this repository's own issues (`#N`, `clwdrun/clwd#N`) are fine.
+no-cross-repo-refs:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    refs=$(git grep -nIoE '[A-Za-z][A-Za-z0-9_.-]*(/[A-Za-z0-9_.-]+)?#[0-9]+' | grep -vE ':clwdrun/clwd#[0-9]+$')
+    if [ -n "$refs" ]; then
+      echo "error: an issue reference into another repository:"
+      printf '%s\n' "$refs"
+      exit 1
+    fi
+    echo "ok: no issue reference into another repository"
 
 # Every request to the platform carries the token, so every HTTP client in the
 # CLI is built by `PlatformUrl::client`, which follows no redirect and, for a
