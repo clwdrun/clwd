@@ -165,11 +165,45 @@ pub enum Command {
         #[arg(long)]
         platform: Option<String>,
     },
-    /// Stream logs for an app
+    /// Read an app's logs on the platform
+    ///
+    /// What the app wrote to stdout and stderr, and the platform's own line
+    /// about each request of it that failed: the code the visitor got, the
+    /// runtime's code and hint, the status and the latency. Lines are kept for
+    /// 7 days, at most 5,000 an app, and may contain the app's visitors' data.
     Logs {
-        /// Keep the stream open and print lines as they arrive
+        /// The app's host label. Defaults to `[app] host_label` in the
+        /// project's clwd.toml.
+        host_label: Option<String>,
+
+        /// The app, by its id, instead of by label.
+        #[arg(long, conflicts_with = "host_label")]
+        app: Option<String>,
+
+        /// The org the label is in. Defaults to `$CLWD_ORG`.
+        #[arg(long)]
+        org: Option<String>,
+
+        /// The platform base URL. Defaults to `$CLWD_PLATFORM_URL`.
+        #[arg(long)]
+        platform: Option<String>,
+
+        /// The project whose clwd.toml names the app, when no label is given.
+        #[arg(long, default_value = ".")]
+        project: std::path::PathBuf,
+
+        /// Keep reading, printing lines as they arrive.
         #[arg(long)]
         follow: bool,
+
+        /// Only lines from this long ago: 30s, 5m, 2h, 1d.
+        #[arg(long)]
+        since: Option<String>,
+
+        /// Only one request's lines: the `request_id` of a visitor's error, or
+        /// a response's `x-request-id` header.
+        #[arg(long = "request")]
+        request_id: Option<String>,
     },
     /// Manage secrets for an app, for local development
     Secrets {

@@ -150,14 +150,55 @@ mod served {
         })
     }
 
-    /// Forward the guest's own stdout/stderr output, one prefixed line at a time.
+    /// Forward the guest's own stdout/stderr output, one line at a time, in
+    /// the format `clwd logs` uses for a deployed app — escaped the same way,
+    /// so local and deployed output look alike and neither lets an app's text
+    /// drive the terminal.
     async fn drain_guest_logs(stream: clwd_runtime::LogStream) {
         let mut stream = std::pin::pin!(stream);
         while let Some(line) = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
             if let Ok(line) = line {
-                tracing::info!("[app] {}", line.message);
+                tracing::info!("{}", app_line(line));
             }
         }
+    }
+
+    /// A runtime log line, as `clwd logs` shows an app line.
+    pub(super) fn app_line(line: clwd_runtime::LogLine) -> String {
+        let stream = match line.stream {
+            Some(clwd_runtime::LogStreamKind::Stderr) => "stderr",
+            _ => "stdout",
+        };
+        crate::commands::logs::render(&crate::commands::logs::LogLine::app(
+            rfc3339(line.timestamp),
+            Some(stream),
+            line.request_id.map(|id| id.as_str().to_owned()),
+            line.message,
+        ))
+    }
+
+    /// `t` as `YYYY-MM-DDTHH:MM:SSZ`, UTC.
+    pub(super) fn rfc3339(t: std::time::SystemTime) -> String {
+        let secs = t
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let (days, rem) = (secs / 86_400, secs % 86_400);
+        // Days since the epoch to a civil date (Hinnant's algorithm).
+        let z = days.cast_signed() + 719_468;
+        let era = z.div_euclid(146_097);
+        let doe = z.rem_euclid(146_097);
+        let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let day = doy - (153 * mp + 2) / 5 + 1;
+        let month = if mp < 10 { mp + 3 } else { mp - 9 };
+        let year = yoe + era * 400 + i64::from(month <= 2);
+        format!(
+            "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+            rem / 3_600,
+            rem % 3_600 / 60,
+            rem % 60
+        )
     }
 
     /// Serve one request against `active`: everything the dev server does
@@ -250,12 +291,18 @@ mod served {
 
         // The request timing — deliberately not the rebuild timing, which the
         // reload line reports separately.
-        tracing::info!(
-            "{} {path} -> {} ({} ms)",
-            parts.method,
-            response.status().as_u16(),
-            start.elapsed().as_millis()
+        // A platform line, as `clwd logs` shows one; the path is the client's
+        // and is escaped like any other log text.
+        let line = crate::commands::logs::LogLine::platform(
+            rfc3339(std::time::SystemTime::now()),
+            format!(
+                "{} {path} -> {} in {} ms",
+                parts.method,
+                response.status().as_u16(),
+                start.elapsed().as_millis()
+            ),
         );
+        tracing::info!("{}", crate::commands::logs::render(&line));
         Ok(response)
     }
 
@@ -352,6 +399,36 @@ mod served {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        /// Output parity: a line the dev server prints is exactly the line
+        /// `clwd logs` prints for the same app output, escaping included.
+        #[test]
+        fn the_dev_server_prints_app_lines_as_clwd_logs_does() {
+            let hostile = "\u{1b}[2Jsaving\r";
+            let mut line = clwd_runtime::LogLine::new(clwd_runtime::LogLevel::Info, hostile);
+            line.stream = Some(clwd_runtime::LogStreamKind::Stderr);
+            let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_761_210_942);
+            line.timestamp = at;
+            let expected = crate::commands::logs::render(&crate::commands::logs::LogLine::app(
+                rfc3339(at),
+                Some("stderr"),
+                None,
+                hostile.to_owned(),
+            ));
+            assert_eq!(app_line(line), expected);
+            assert!(
+                expected.contains("app      stderr │ \\u{1b}[2Jsaving\\r"),
+                "{expected}"
+            );
+        }
+
+        #[test]
+        fn timestamps_are_utc_rfc3339() {
+            let at = |secs| rfc3339(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs));
+            assert_eq!(at(0), "1970-01-01T00:00:00Z");
+            assert_eq!(at(951_782_400), "2000-02-29T00:00:00Z");
+            assert_eq!(at(1_761_210_942), "2025-10-23T09:15:42Z");
+        }
 
         const GUEST: &[u8] = include_bytes!("../../../../runtime/tests/fixtures/app.wasm");
 

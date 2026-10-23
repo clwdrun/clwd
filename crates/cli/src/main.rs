@@ -166,7 +166,31 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
             commands::deploy::execute(project, org.as_deref(), platform.as_deref(), progress),
             out,
         ),
-        Command::Logs { follow } => logs(*follow, progress, format, out),
+        Command::Logs {
+            host_label,
+            app,
+            org,
+            platform,
+            project,
+            follow,
+            since,
+            request_id,
+        } => {
+            // No label and no id: the project's own, the way deploy names it.
+            let host_label = match (host_label, app) {
+                (None, None) => Some(commands::deploy::host_label(project)?),
+                _ => host_label.clone(),
+            };
+            let mut options = commands::logs::Options::default();
+            options.host_label = host_label;
+            options.app_id = app.clone();
+            options.org = org.clone();
+            options.platform = platform.clone();
+            options.follow = *follow;
+            options.since = since.clone();
+            options.request_id = request_id.clone();
+            logs(options, progress, format, out)
+        }
         Command::Secrets { action, project } => secrets(action, project, format, out),
         Command::Mcp => emit(format, commands::mcp::execute(progress), out),
     };
@@ -182,19 +206,18 @@ fn dispatch(cli: &Cli, format: Format, out: &mut dyn Write) -> Result<(), CliErr
 /// The command hands back a stream; turning it into output is this file's job.
 /// #32 will wrap the same items as JSON-RPC notifications instead.
 fn logs(
-    follow: bool,
+    options: commands::logs::Options,
     progress: Option<&dyn Progress>,
     format: Format,
     out: &mut dyn Write,
 ) -> Result<(), CliError> {
-    let stream = commands::logs::execute(follow, progress)?;
-
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(internal)?;
 
     runtime.block_on(async {
+        let stream = commands::logs::execute(options, progress).await?;
         let mut stream = pin!(stream);
         while let Some(line) = poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
             format.value(&line?, out).map_err(internal)?;
