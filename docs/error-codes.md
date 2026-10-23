@@ -60,6 +60,7 @@ signal instead.
 | [`cli.manifest_invalid`](#climanifest_invalid) | `fix_input` | yes |
 | [`cli.toolchain_missing`](#clitoolchain_missing) | `fix_permissions` | yes |
 | [`cli.build_failed`](#clibuild_failed) | `fix_input` | yes |
+| [`cli.deploy_in_progress`](#clideploy_in_progress) | `retry` | yes |
 | [`cli.internal`](#cliinternal) | `report_bug` | yes |
 | [`net.unreachable`](#netunreachable) | `retry` | yes |
 | [`runtime.bundle_not_found`](#runtimebundle_not_found) | `fix_input` | yes |
@@ -186,6 +187,16 @@ A step of the build ran and reported failure. The commonest cause is that the ap
 **Hint** (in the envelope): Fix the first error in the build output above, then run `clwd build` again.
 
 *Recovery:* `fix_input` · *Reachable:* yes
+
+### `cli.deploy_in_progress`
+
+Another `clwd deploy` of the same project is running, from this process or another. Deploys of one project never overlap: interleaved, either one's bundle could be the one published last. The lock is released when the other deploy ends, however it ends.
+
+**What to do:** Wait for the other deploy to finish, then run the same command again. Nothing needs to change.
+
+**Hint** (in the envelope): wait for the other deploy of this project to finish, then run it again
+
+*Recovery:* `retry` · *Reachable:* yes
 
 ### `cli.internal`
 

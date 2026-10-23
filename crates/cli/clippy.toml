@@ -1,0 +1,27 @@
+# Under `clwd mcp serve`, stdout is the protocol: one stray byte ends the
+# session. These bans make that structural rather than a matter of care.
+#
+# The print macros are banned outright: nothing in this crate uses them, tests
+# included. Taking stdout is banned except in exactly two places, both in
+# `main.rs` and each with an `#[expect]` saying which owner it is: the CLI's
+# renderer and the MCP transport. `just stdout-owners` fails if that count is
+# ever anything but two.
+#
+# Child processes are confined differently, because the tests start the
+# binary: `build::process::command` is the one constructor of a
+# `std::process::Command` in `src/`, and `just spawn-confined` holds that.
+
+disallowed-macros = [
+  { path = "std::print", reason = "stdout belongs to the renderer or the MCP transport; return a value instead" },
+  { path = "std::println", reason = "stdout belongs to the renderer or the MCP transport; return a value instead" },
+  { path = "std::eprint", reason = "diagnostics are `tracing` events or typed errors, rendered by the binary" },
+  { path = "std::eprintln", reason = "diagnostics are `tracing` events or typed errors, rendered by the binary" },
+  { path = "std::dbg", reason = "dbg! writes to stderr and is never meant to ship" },
+]
+
+disallowed-methods = [
+  { path = "std::io::stdout", reason = "only main.rs owns stdout" },
+  { path = "tokio::io::stdout", reason = "only main.rs owns stdout" },
+  { path = "rmcp::transport::stdio", reason = "only main.rs owns stdout" },
+  { path = "rmcp::transport::io::stdio_pipes", reason = "only main.rs owns stdout" },
+]

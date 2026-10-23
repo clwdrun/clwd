@@ -123,6 +123,50 @@ jobs:
           fi
           echo "ok: no print macro in the clwd-cli library surface"
 
+      # Mirrors `just stdout-owners`: exactly two places take stdout, both in
+      # main.rs, each behind an `#[expect]` naming which owner it is.
+      - name: stdout has exactly two owners
+        run: |
+          sites=$(grep -rn --include='*.rs' 'clippy::disallowed_methods' crates/cli)
+          count=$(printf '%s\n' "$sites" | grep -c . || true)
+          if [ "$count" -ne 2 ] || printf '%s\n' "$sites" | grep -qv '^crates/cli/src/main.rs:'; then
+            echo "::error::expected exactly 2 disallowed_methods expectations, both in main.rs; found $count"
+            printf '%s\n' "$sites"
+            exit 1
+          fi
+          echo "ok: stdout has exactly two owners, both in main.rs"
+
+      # Mirrors `just spawn-confined`: one subprocess constructor, which closes
+      # stdin and drops every CLWD_* variable.
+      - name: one subprocess constructor
+        run: |
+          sites=$(grep -rn --include='*.rs' -E '\bCommand::new\(' crates/cli/src)
+          if [ "$(printf '%s\n' "$sites" | grep -c .)" -ne 1 ] \
+             || ! printf '%s\n' "$sites" | grep -q '^crates/cli/src/build/process.rs:'; then
+            echo "::error::a subprocess is constructed outside build::process::command"
+            printf '%s\n' "$sites"
+            exit 1
+          fi
+          echo "ok: one subprocess constructor, in build::process"
+
+      # Mirrors `just mcp-panic`: the panic test needs the test-only tool.
+      - name: mcp panic test
+        run: cargo test -p clwd-cli --features mcp-test-panic --test mcp_panic
+
+      # Mirrors `just mcp-release-bare`: the panicking tool never ships.
+      - name: release binary has no test-only tool
+        run: |
+          cargo build -p clwd-cli --release --bin clwd
+          if ! grep -qa 'list_templates' target/release/clwd; then
+            echo "::error::the release binary has no list_templates — the check would prove nothing"
+            exit 1
+          fi
+          if grep -qa 'clwd_test_panic' target/release/clwd; then
+            echo "::error::the release binary contains the test-only panicking tool"
+            exit 1
+          fi
+          echo "ok: the release binary has no test-only tool"
+
       # The terminal-drawing dependencies are a feature, so this is the
       # assertion that the library half compiles without them.
       - name: library builds without terminal dependencies

@@ -216,7 +216,24 @@ pub enum Command {
         project: std::path::PathBuf,
     },
     /// Expose these commands over the Model Context Protocol
-    Mcp,
+    Mcp {
+        #[command(subcommand)]
+        action: McpAction,
+    },
+}
+
+/// `clwd mcp` subcommands.
+#[derive(clap::Subcommand, Debug)]
+pub enum McpAction {
+    /// Serve MCP over stdin and stdout, for a client that starts this process
+    ///
+    /// Stdout carries protocol messages only; diagnostics go to stderr. Tools
+    /// act within the workspace root and nowhere else.
+    Serve {
+        /// The workspace root. Defaults to the directory the server starts in.
+        #[arg(long)]
+        root: Option<std::path::PathBuf>,
+    },
 }
 
 /// What `clwd secrets` can do.

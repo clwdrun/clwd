@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare cli-deps spec-intact guest-intact templates-build bundle-deps trait-deps wasm-contained deny
+check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare stdout-owners spawn-confined mcp-panic mcp-release-bare cli-deps spec-intact guest-intact templates-build bundle-deps trait-deps wasm-contained deny
 
 # Secret scan over full history. GitHub's own scanning and push protection are
 # Advanced Security features and are not available on a private repository, so
@@ -84,6 +84,60 @@ lib-silent:
       exit 1
     fi
     echo "ok: no print macro in the clwd-cli library surface"
+
+# Under `clwd mcp serve` stdout is the protocol. `crates/cli/clippy.toml` bans
+# taking it except where an `#[expect]` says which owner is taking it: the CLI's
+# renderer and the MCP transport, both in main.rs. A third is a new writer to
+# a stream one stray byte breaks, so it fails here rather than slipping in.
+stdout-owners:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    sites=$(grep -rn --include='*.rs' 'clippy::disallowed_methods' crates/cli)
+    count=$(printf '%s\n' "$sites" | grep -c . || true)
+    if [ "$count" -ne 2 ] || printf '%s\n' "$sites" | grep -qv '^crates/cli/src/main.rs:'; then
+      echo "error: expected exactly 2 disallowed_methods expectations, both in crates/cli/src/main.rs; found $count:"
+      printf '%s\n' "$sites"
+      exit 1
+    fi
+    echo "ok: stdout has exactly two owners, both in main.rs"
+
+# Every subprocess the CLI starts closes stdin and drops every CLWD_* variable
+# (the platform token among them). That holds because there is one
+# constructor: `build::process::command`. The tests start the binary with
+# `Command::new` too, which is why this is a grep over src/ and not a clippy ban.
+spawn-confined:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    sites=$(grep -rn --include='*.rs' -E '\bCommand::new\(' crates/cli/src)
+    if [ "$(printf '%s\n' "$sites" | grep -c .)" -ne 1 ] \
+       || ! printf '%s\n' "$sites" | grep -q '^crates/cli/src/build/process.rs:'; then
+      echo "error: a subprocess is constructed outside build::process::command:"
+      printf '%s\n' "$sites"
+      exit 1
+    fi
+    echo "ok: one subprocess constructor, in build::process"
+
+# The panic test needs the test-only tool, so it is its own target with
+# `mcp-test-panic` as a required feature; `cargo test --workspace` does not
+# build it, and this does.
+mcp-panic:
+    cargo test -p clwd-cli --features mcp-test-panic --test mcp_panic
+
+# The panicking tool must never ship. Checked in the release binary itself, with
+# a positive control: a real tool's name is found, so the grep can see names.
+mcp-release-bare:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    cargo build -p clwd-cli --release --bin clwd
+    if ! grep -qa 'list_templates' target/release/clwd; then
+      echo "error: the release binary has no list_templates — the check below would prove nothing"
+      exit 1
+    fi
+    if grep -qa 'clwd_test_panic' target/release/clwd; then
+      echo "error: the release binary contains the test-only panicking tool"
+      exit 1
+    fi
+    echo "ok: the release binary has no test-only tool"
 
 # Terminal-drawing deps are a feature. This asserts the library does not need them.
 lib-bare:

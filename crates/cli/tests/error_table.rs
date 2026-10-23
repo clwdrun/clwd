@@ -230,6 +230,16 @@ const TABLE: &[Row] = &[
         action: Recovery::FixInput,
     },
     Row {
+        code: "cli.deploy_in_progress",
+        meaning: "Another `clwd deploy` of the same project is running, from this process or \
+                  another. Deploys of one project never overlap: interleaved, either one's \
+                  bundle could be the one published last. The lock is released when the \
+                  other deploy ends, however it ends.",
+        recovery: "Wait for the other deploy to finish, then run the same command again. \
+                   Nothing needs to change.",
+        action: Recovery::Retry,
+    },
+    Row {
         code: "cli.internal",
         meaning: "clwd hit a problem it does not have a specific explanation for. This is \
                   always a defect in clwd rather than a mistake by the caller.",
@@ -1039,6 +1049,9 @@ fn recovery_agrees_with_retryable() {
         CliError::BuildFailed {
             step: "x",
             detail: "x".into(),
+        },
+        CliError::DeployInProgress {
+            project: "x".into(),
         },
         CliError::Net {
             detail: "x".into(),

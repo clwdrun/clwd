@@ -13,6 +13,15 @@
 //! Its syntax is checked before the build, so a typo costs nothing; whether the
 //! org may use it is the platform's call.
 //!
+//! # One deploy of a project at a time
+//!
+//! A deploy holds an exclusive lock on `target/.clwd-deploy.lock` in the
+//! project from before its build to after its publish. A second deploy of the
+//! same project, from this process or another, is refused with
+//! `cli.deploy_in_progress` rather than queued behind it: interleaved, either
+//! one's bundle could be published last. The operating system releases the
+//! lock when its holder exits, however it exits.
+//!
 //! # No waiting for the new version to serve
 //!
 //! The command returns once the publish is acknowledged. The version is ready
@@ -25,7 +34,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::Progress;
-use crate::build::{self, Options, Source, manifest};
+use crate::build::{self, Cancel, Options, Source, Tail, manifest};
 use crate::error::CliError;
 use crate::platform::{self, Certificate, CreatedApp, PlatformError};
 
@@ -85,6 +94,20 @@ impl std::fmt::Display for Deployed {
     }
 }
 
+/// What a caller with no terminal adds to a deploy.
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct Control {
+    /// When set, the deploy is refused before anything is built unless it
+    /// equals the label in `clwd.toml`: the caller names the label it is about
+    /// to claim permanently.
+    pub confirm_host_label: Option<String>,
+    /// Keep the build's cargo stderr here instead of inheriting it.
+    pub output: Option<Tail>,
+    /// Lets another thread stop the build.
+    pub cancel: Option<Cancel>,
+}
+
 /// Deploy the project in `project`.
 ///
 /// `org` overrides `$CLWD_ORG` and `platform_url` overrides
@@ -94,15 +117,30 @@ pub fn execute(
     project: &Path,
     org: Option<&str>,
     platform_url: Option<&str>,
+    control: Control,
     progress: Option<&dyn Progress>,
 ) -> Result<Deployed, CliError> {
     // Everything that can be wrong without a build is checked before one.
     let host_label = host_label(project)?;
+    if let Some(confirmed) = &control.confirm_host_label
+        && *confirmed != host_label
+    {
+        return Err(CliError::InvalidArgument {
+            what: format!(
+                "confirm_host_label is {confirmed:?} but clwd.toml declares host_label \
+                 {host_label:?}; nothing was built or deployed"
+            ),
+        });
+    }
     let org = platform::config::org(org)?;
     let url = platform::config::platform_url(platform_url)?;
     let token = platform::config::token()?;
+    let _lock = lock(project)?;
 
-    let built = build::run(&Options::new(project.to_path_buf()), progress)?;
+    let mut options = Options::new(project.to_path_buf());
+    options.output = control.output;
+    options.cancel = control.cancel;
+    let built = build::run(&options, progress)?;
     let bytes = super::publish::read_bundle(&built.bundle)?;
 
     // A one-shot runtime, as in `publish`: the async boundary belongs to the
@@ -137,6 +175,29 @@ pub fn execute(
         created: app.created,
         certificate: published.certificate,
     })
+}
+
+/// Hold the project's deploy lock until the returned file is dropped.
+fn lock(project: &Path) -> Result<std::fs::File, CliError> {
+    let dir = project.join("target");
+    let path = dir.join(".clwd-deploy.lock");
+    let io = |e: std::io::Error| CliError::Internal {
+        source: anyhow::Error::new(e).context(format!("locking {}", path.display())),
+    };
+    std::fs::create_dir_all(&dir).map_err(io)?;
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(io)?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(std::fs::TryLockError::WouldBlock) => Err(CliError::DeployInProgress {
+            project: project.display().to_string(),
+        }),
+        Err(std::fs::TryLockError::Error(e)) => Err(io(e)),
+    }
 }
 
 /// The host label `clwd.toml` declares, checked for syntax.

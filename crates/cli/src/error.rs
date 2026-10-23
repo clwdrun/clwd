@@ -220,6 +220,13 @@ define_cli_error! {
     } => "cli.build_failed",
         "Fix the first error in the build output above, then run `clwd build` again.";
 
+    /// Another deploy of the same project is running. Refused rather than
+    /// queued: two deploys interleaving their build and publish steps could
+    /// publish either one's bundle last.
+    #[error("another deploy of {project} is in progress")]
+    DeployInProgress { project: String } => "cli.deploy_in_progress",
+        "wait for the other deploy of this project to finish, then run it again";
+
     /// A network-layer failure with no HTTP response: connection refused, timed
     /// out, TLS handshake failed. The one publish failure the platform never
     /// gets to describe, because nothing reached it — so unlike a delegated
@@ -281,6 +288,8 @@ impl CliError {
             // Carried on the variant: set from the transport at the point of
             // failure (a timeout or a refused connection may succeed later).
             Self::Net { retryable, .. } => *retryable,
+            // The other deploy ends on its own; the same command then runs.
+            Self::DeployInProgress { .. } => true,
             Self::InvalidArgument { .. }
             | Self::NotFound { .. }
             | Self::NotImplemented { .. }
@@ -316,6 +325,9 @@ pub(crate) mod tests {
             CliError::BuildFailed {
                 step: "x",
                 detail: "x".into(),
+            },
+            CliError::DeployInProgress {
+                project: "x".into(),
             },
             CliError::Net {
                 detail: "x".into(),

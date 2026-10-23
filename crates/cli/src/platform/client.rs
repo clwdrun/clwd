@@ -223,7 +223,7 @@ pub async fn create_app(
 }
 
 /// An app, as looking it up by its label returns it.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct AppSummary {
     pub id: String,
@@ -250,14 +250,15 @@ pub struct LogPage {
     pub cursor: Option<crate::commands::logs::LogCursor>,
 }
 
-/// What to read: after a cursor, one request's lines, recent lines only, and
-/// how long to wait for a line when there is none.
+/// What to read: after a cursor, one request's lines, recent lines only, at
+/// most how many, and how long to wait for a line when there is none.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct LogQuery {
     pub after: Option<crate::commands::logs::LogCursor>,
     pub request_id: Option<String>,
     pub since_secs: Option<u64>,
+    pub limit: Option<u32>,
     pub wait_secs: u64,
 }
 
@@ -280,6 +281,9 @@ pub async fn read_logs(
         }
         if let Some(since) = query.since_secs {
             pairs.append_pair("since", &since.to_string());
+        }
+        if let Some(limit) = query.limit {
+            pairs.append_pair("limit", &limit.to_string());
         }
         if query.wait_secs > 0 {
             pairs.append_pair("wait", &query.wait_secs.to_string());

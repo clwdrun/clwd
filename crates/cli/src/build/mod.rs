@@ -24,6 +24,7 @@
 
 pub mod cargo;
 pub mod manifest;
+pub mod process;
 pub mod size;
 pub mod toolchain;
 
@@ -32,6 +33,7 @@ use std::path::{Path, PathBuf};
 use clwd_bundle::File;
 
 pub use manifest::Source;
+pub use process::{Cancel, Tail};
 pub use size::{BundleSize, ComponentSize, Verdict};
 pub use toolchain::Toolchain;
 
@@ -51,6 +53,10 @@ pub struct Options {
     pub out: Option<PathBuf>,
     /// Strip custom sections. `--no-optimize` turns this off.
     pub optimize: bool,
+    /// Keep cargo's stderr here instead of inheriting it.
+    pub output: Option<Tail>,
+    /// Lets another thread stop the build.
+    pub cancel: Option<Cancel>,
 }
 
 impl Options {
@@ -61,6 +67,8 @@ impl Options {
             project,
             out: None,
             optimize: true,
+            output: None,
+            cancel: None,
         }
     }
 }
@@ -154,7 +162,12 @@ pub fn run(options: &Options, progress: Option<&dyn Progress>) -> Result<Built, 
     if let Some(p) = progress {
         p.step("building the component");
     }
-    let component = cargo::compile(&options.project, progress)?;
+    let component = cargo::compile(
+        &options.project,
+        progress,
+        options.output.as_ref(),
+        options.cancel.as_ref(),
+    )?;
 
     let toolchain = Toolchain::detect();
     if options.optimize && !toolchain.has_wasm_tools() {
@@ -212,6 +225,12 @@ pub fn run(options: &Options, progress: Option<&dyn Progress>) -> Result<Built, 
     // bundle to compare is cheaper than rewriting one, and leaving the file
     // untouched preserves its mtime for anything watching it.
     let unchanged = std::fs::read(&out).is_ok_and(|existing| existing == encoded.bytes);
+    if options.cancel.as_ref().is_some_and(Cancel::is_cancelled) {
+        return Err(CliError::BuildFailed {
+            step: "writing the bundle",
+            detail: "the build was cancelled before its bundle was written".to_owned(),
+        });
+    }
     if !unchanged {
         if let Some(parent) = out.parent() {
             std::fs::create_dir_all(parent).map_err(|e| CliError::BuildFailed {
@@ -219,10 +238,18 @@ pub fn run(options: &Options, progress: Option<&dyn Progress>) -> Result<Built, 
                 detail: format!("{}: {e}", parent.display()),
             })?;
         }
-        std::fs::write(&out, &encoded.bytes).map_err(|e| CliError::BuildFailed {
-            step: "writing the bundle",
-            detail: format!("{}: {e}", out.display()),
-        })?;
+        // Written beside the bundle and renamed into place, so a build stopped
+        // midway leaves the previous bundle or none, never half of one.
+        let partial = out.with_extension(format!("{BUNDLE_EXT}.partial"));
+        std::fs::write(&partial, &encoded.bytes)
+            .and_then(|()| std::fs::rename(&partial, &out))
+            .map_err(|e| {
+                let _ = std::fs::remove_file(&partial);
+                CliError::BuildFailed {
+                    step: "writing the bundle",
+                    detail: format!("{}: {e}", out.display()),
+                }
+            })?;
     }
 
     let bundle_size = BundleSize::from_bytes(encoded.bytes.len() as u64);
