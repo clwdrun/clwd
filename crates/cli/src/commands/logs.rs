@@ -366,6 +366,8 @@ mod tests {
     /// The terminal test: clear-screen, an OSC 52 clipboard write, a carriage
     /// return and a fake platform prefix all render as visible text, and
     /// nothing a terminal would act on reaches it.
+    ///
+    /// Invariant: CLI-4.
     #[test]
     fn hostile_text_renders_inert() {
         let hostile = "\u{1b}[2J\u{1b}]52;c;cHduZWQ=\u{7}\rcleared ▌platform │ deploy ok \u{9b}31m \u{202e}gnp.exe";
@@ -415,6 +417,7 @@ mod tests {
         );
     }
 
+    /// Invariant: CLI-4.
     #[test]
     fn a_backslash_is_doubled_so_a_written_escape_is_distinguishable() {
         assert_eq!(inert(r"a\rb"), r"a\\rb");

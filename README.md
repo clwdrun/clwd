@@ -25,3 +25,7 @@ cargo build -p clwd-runtime --features microvm
 The isolation boundary is the product, and this repo is public so it can be
 audited. Report vulnerabilities privately — see [SECURITY.md](SECURITY.md).
 Do not open a public issue for a suspected sandbox escape.
+
+What clwd protects and how is in the [threat model](docs/security/threat-model.md);
+each guarantee and the test that enforces it is in
+[invariants](docs/security/invariants.md).

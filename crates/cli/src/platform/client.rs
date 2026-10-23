@@ -690,6 +690,8 @@ mod tests {
     }
 
     /// The positive control: no token value ever reaches rendered output.
+    ///
+    /// Invariant: CLI-2.
     #[tokio::test]
     async fn the_token_never_appears_in_a_rendered_result() {
         let (base, server) = serve_once(201, "Created", "", version_body("pending")).await;

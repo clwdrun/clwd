@@ -55,6 +55,7 @@ jobs:
       # the download produced would run with sudo, against full history, and
       # report clean. `set -euo pipefail` so a failed download cannot fall
       # through to the next line.
+      # Invariant: SC-4.
       - name: install gitleaks
         run: |
           set -euo pipefail
@@ -67,6 +68,7 @@ jobs:
           rm -f "$archive" gitleaks
           gitleaks version
 
+      # Invariant: SC-3.
       - name: secrets
         run: gitleaks detect --no-banner --redact --exit-code 1
 
@@ -125,6 +127,7 @@ jobs:
 
       # Mirrors `just stdout-owners`: exactly two places take stdout, both in
       # main.rs, each behind an `#[expect]` naming which owner it is.
+      # Invariant: MCP-1.
       - name: stdout has exactly two owners
         run: |
           sites=$(grep -rn --include='*.rs' 'clippy::disallowed_methods' crates/cli)
@@ -138,6 +141,7 @@ jobs:
 
       # Mirrors `just spawn-confined`: one subprocess constructor, which closes
       # stdin and drops every CLWD_* variable.
+      # Invariant: CLI-3.
       - name: one subprocess constructor
         run: |
           sites=$(grep -rn --include='*.rs' -E '\bCommand::new\(' crates/cli/src)
@@ -149,11 +153,78 @@ jobs:
           fi
           echo "ok: one subprocess constructor, in build::process"
 
+      # Mirrors `just stdin-readers`: stdin is read in exactly two places,
+      # both in main.rs, so nothing prompts and nothing takes the protocol.
+      # Invariant: CLI-10.
+      - name: stdin has exactly two readers
+        run: |
+          sites=$(grep -rn --include='*.rs' -E '\bstdin\(\)' crates/cli/src)
+          if [ "$(printf '%s\n' "$sites" | grep -c .)" -ne 2 ] \
+             || printf '%s\n' "$sites" | grep -qv '^crates/cli/src/main.rs:'; then
+            echo "::error::expected exactly 2 stdin readers, both in crates/cli/src/main.rs"
+            printf '%s\n' "$sites"
+            exit 1
+          fi
+          echo "ok: stdin has exactly two readers, both in main.rs"
+
+      # Mirrors `just wasmtime-features`: the exact reviewed feature set.
+      # Invariant: RT-16.
+      - name: wasmtime builds with exactly the reviewed features
+        run: |
+          set -uo pipefail
+          expected='wasmtime feature "addr2line"
+          wasmtime feature "async"
+          wasmtime feature "backtrace"
+          wasmtime feature "component-model"
+          wasmtime feature "cranelift"
+          wasmtime feature "parallel-compilation"
+          wasmtime feature "runtime"
+          wasmtime feature "std"
+          wasmtime feature "wasmtime-jit-icache-coherence"
+          wasmtime feature "wasmtime-unwinder"
+          wasmtime-wasi feature "p2"
+          wasmtime-wasi-http feature "default-send-request"
+          wasmtime-wasi-http feature "p2"'
+          expected=$(printf '%s\n' "$expected" | sed 's/^ *//' | sort -u)
+          actual=$(for c in wasmtime wasmtime-wasi wasmtime-wasi-http; do
+            cargo tree --workspace --all-features -e features -i "$c" | grep -oE "$c feature \"[a-z0-9-]+\""
+          done | sort -u)
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::the wasmtime feature set changed (< expected, > actual)"
+            diff <(printf '%s\n' "$expected") <(printf '%s\n' "$actual")
+            exit 1
+          fi
+          echo "ok: wasmtime builds with exactly the reviewed features"
+
+      # Mirrors `just invariants`: docs/security/invariants.md and the
+      # `Invariant: ID` references in tests, recipes and steps agree.
+      - name: every invariant is enforced, and every reference exists
+        run: |
+          set -uo pipefail
+          doc=docs/security/invariants.md
+          ids=$(grep -oE '^### [A-Z]+-[0-9]+' "$doc" | cut -d' ' -f2)
+          refs=$(grep -rhoE --exclude-dir=target --exclude-dir=.git 'Invariant: [A-Z]+-[0-9]+' \
+                   crates templates justfile .github | cut -d' ' -f2 | sort -u)
+          if [ -z "$ids" ] || [ -z "$refs" ]; then
+            echo "::error::found no invariants or no references; this check would prove nothing"
+            exit 1
+          fi
+          fail=0
+          dups=$(printf '%s\n' "$ids" | sort | uniq -d)
+          [ -n "$dups" ] && { echo "::error::invariants defined twice: $dups"; fail=1; }
+          unenforced=$(comm -23 <(printf '%s\n' "$ids" | sort -u) <(printf '%s\n' "$refs"))
+          [ -n "$unenforced" ] && { echo "::error::invariants nothing enforces:" $unenforced; fail=1; }
+          unknown=$(comm -13 <(printf '%s\n' "$ids" | sort -u) <(printf '%s\n' "$refs"))
+          [ -n "$unknown" ] && { echo "::error::references to undefined invariants:" $unknown; fail=1; }
+          [ "$fail" -eq 0 ] || exit 1
+          echo "ok: $(printf '%s\n' "$ids" | grep -c .) invariants, each enforced, and no unknown reference"
+
       # Mirrors `just mcp-panic`: the panic test needs the test-only tool.
       - name: mcp panic test
         run: cargo test -p clwd-cli --features mcp-test-panic --test mcp_panic
 
       # Mirrors `just mcp-release-bare`: the panicking tool never ships.
+      # Invariant: MCP-6.
       - name: release binary has no test-only tool
         run: |
           cargo build -p clwd-cli --release --bin clwd
@@ -177,6 +248,7 @@ jobs:
       # reflows either surfaces later as a digest mismatch with no obvious
       # cause, so drift is caught here instead. A deliberate spec change
       # updates SHA256SUMS in the same commit.
+      # Invariant: SC-7.
       - name: spec and fixtures have not drifted
         run: cd docs/spec && sha256sum -c SHA256SUMS
 
@@ -211,6 +283,7 @@ jobs:
       # The release binary, checksum-verified like gitleaks above, rather than
       # `cargo install`, which compiled it from source on every cache miss —
       # minutes of the gate spent building a linter.
+      # Invariant: SC-4.
       - name: install cargo-deny
         run: |
           set -euo pipefail
@@ -223,6 +296,7 @@ jobs:
           rm -rf "$name" "$name.tar.gz"
           cargo-deny --version
 
+      # Invariant: SC-1.
       - name: deny
         run: cargo deny check --hide-inclusion-graph
 

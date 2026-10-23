@@ -271,6 +271,8 @@ mod tests {
     /// Deny-by-default at the app-data boundary: with no storage granted, an
     /// operation is refused and the guest sees a generic `invalid-key` — the one
     /// typed, handleable error the app-data interface offers for a refusal.
+    ///
+    /// Invariant: RT-11.
     #[test]
     fn an_ungranted_app_data_operation_is_denied() {
         let ungranted = StoragePolicy::from_manifest(&[]);

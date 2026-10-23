@@ -324,6 +324,7 @@ mod tests {
         assert_eq!(unique.len(), OWNED_CODES.len(), "duplicate code");
     }
 
+    /// Invariant: RT-19.
     #[test]
     fn owned_codes_are_exhaustive_over_variants() {
         let produced: BTreeSet<&str> = samples().iter().map(Error::code).collect();
@@ -363,6 +364,8 @@ mod tests {
 
     /// `retryable()` returns what the catalogue publishes, for every variant,
     /// and the delegating variant forwards its source's answer.
+    ///
+    /// Invariant: RT-19.
     #[test]
     fn retryable_agrees_with_the_catalogue() {
         let catalogue: std::collections::BTreeMap<&str, bool> =

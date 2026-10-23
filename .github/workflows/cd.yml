@@ -135,6 +135,7 @@ jobs:
           ref: ${{ needs.verify-tag.outputs.tag }}
           fetch-depth: 0
 
+      # Invariant: SC-5.
       - name: the tagged commit is on main, and ci passed on it
         env:
           GH_TOKEN: ${{ github.token }}
@@ -175,6 +176,7 @@ jobs:
           rm -rf "$name" "$name.tar.gz"
           cargo-deny --version
 
+      # Invariant: SC-5.
       - name: (c) advisories, fresh
         run: cargo deny check --hide-inclusion-graph advisories
 
@@ -205,6 +207,7 @@ jobs:
   # Cutting a Release is deliberate, never a side effect of pushing a ref.
   # See the note at the top of this file and the seam section in
   # docs/development.md.
+  # Invariant: SC-6.
   release:
     if: github.event_name == 'workflow_dispatch'
     needs: [verify-tag, gate]
@@ -256,6 +259,7 @@ jobs:
             *.tar.gz
             *.tar.gz.sha256
 
+  # Invariant: SC-6.
   cut-release:
     if: github.event_name == 'workflow_dispatch'
     needs: [verify-tag, release]

@@ -268,6 +268,8 @@ fn init_list_json_is_an_array_of_name_teaches_works_deployed() {
 
 /// The agent path: non-interactive, one JSON object, and the next commands
 /// spelled out.
+///
+/// Invariant: CLI-10.
 #[test]
 fn init_with_stdin_closed_scaffolds_and_prints_the_next_commands() {
     let scratch = Scratch::new("stdin");
@@ -311,6 +313,8 @@ fn init_with_stdin_closed_scaffolds_and_prints_the_next_commands() {
 ///
 /// The real binary, on a real scaffold, as an author would run it: scaffold,
 /// then `clwd dev`, then a request to it.
+///
+/// Invariant: SDK-1.
 #[test]
 fn init_then_dev_serves_the_scaffold() {
     let scratch = Scratch::new("e2e");

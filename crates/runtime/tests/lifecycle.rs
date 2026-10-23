@@ -68,6 +68,8 @@ async fn full_lifecycle_spawn_invoke_logs_stop() {
 /// The property is that the code is *unchanged*, so only a string comparison
 /// tests it. Asserting merely that an error occurred would pass even if the
 /// code had been re-spelled into the runtime namespace.
+///
+/// Invariant: RT-17.
 #[tokio::test]
 async fn a_bundle_failure_keeps_its_own_code_verbatim() {
     let (digest, bytes) = tampered_bundle();

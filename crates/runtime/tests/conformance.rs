@@ -208,6 +208,7 @@ fn microvm_backend_is_unproven() {
 // R1 — caller isolation
 // ======================================================================
 
+/// Invariant: RT-2.
 #[tokio::test]
 async fn r1_1() {
     const ID: &str = "R1.1";
@@ -264,6 +265,7 @@ async fn r1_1() {
     }
 }
 
+/// Invariant: RT-2.
 #[tokio::test]
 async fn r1_2() {
     const ID: &str = "R1.2";
@@ -295,6 +297,7 @@ async fn r1_2() {
     }
 }
 
+/// Invariant: RT-2.
 #[tokio::test]
 async fn r1_3() {
     const ID: &str = "R1.3";
@@ -321,6 +324,7 @@ async fn r1_3() {
     }
 }
 
+/// Invariant: RT-2.
 #[tokio::test]
 async fn r1_4() {
     const ID: &str = "R1.4";
@@ -342,6 +346,7 @@ async fn r1_4() {
     }
 }
 
+/// Invariant: RT-2.
 #[tokio::test]
 async fn r1_5() {
     const ID: &str = "R1.5";
@@ -369,6 +374,7 @@ async fn r1_5() {
     }
 }
 
+/// Invariant: RT-2.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn r1_6() {
     const ID: &str = "R1.6";
@@ -409,6 +415,7 @@ async fn r1_6() {
     }
 }
 
+/// Invariant: RT-4.
 #[tokio::test]
 async fn r1_7() {
     const ID: &str = "R1.7";
@@ -439,6 +446,7 @@ async fn r1_7() {
     }
 }
 
+/// Invariant: RT-3.
 #[tokio::test]
 async fn r1_8() {
     const ID: &str = "R1.8";
@@ -546,6 +554,7 @@ async fn r2_3() {
     }
 }
 
+/// Invariant: RT-17.
 #[tokio::test]
 async fn r2_4() {
     const ID: &str = "R2.4";
@@ -653,6 +662,7 @@ async fn r2_6() {
 // R3 — fault isolation
 // ======================================================================
 
+/// Invariant: RT-14.
 #[tokio::test]
 async fn r3_1() {
     const ID: &str = "R3.1";
@@ -687,6 +697,8 @@ async fn r3_1() {
 /// the test would pass without the backend isolating the fault. A backend that
 /// pools long-lived instances (the microVM in #21) must isolate the fault
 /// itself and should not read a green R3.2 as proof that it does.
+///
+/// Invariant: RT-14.
 #[tokio::test]
 async fn r3_2() {
     const ID: &str = "R3.2";
@@ -715,6 +727,7 @@ async fn r3_2() {
     }
 }
 
+/// Invariant: RT-14.
 #[tokio::test]
 async fn r3_3() {
     const ID: &str = "R3.3";
@@ -749,6 +762,7 @@ async fn r3_3() {
 // R4 — resource budgets
 // ======================================================================
 
+/// Invariant: RT-5.
 #[tokio::test]
 async fn r4_1() {
     const ID: &str = "R4.1";
@@ -793,6 +807,7 @@ async fn r4_1() {
     }
 }
 
+/// Invariant: RT-5.
 #[tokio::test]
 async fn r4_2() {
     const ID: &str = "R4.2";
@@ -822,6 +837,7 @@ async fn r4_2() {
     }
 }
 
+/// Invariant: RT-5.
 #[tokio::test]
 async fn r4_3() {
     const ID: &str = "R4.3";
@@ -875,6 +891,7 @@ async fn r4_3() {
     }
 }
 
+/// Invariant: RT-6.
 #[tokio::test]
 async fn r4_4() {
     const ID: &str = "R4.4";
@@ -925,6 +942,7 @@ async fn r4_4() {
     }
 }
 
+/// Invariant: RT-5.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn r4_5() {
     const ID: &str = "R4.5";
@@ -971,6 +989,7 @@ async fn r4_5() {
     }
 }
 
+/// Invariant: RT-5.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn r4_6() {
     const ID: &str = "R4.6";
@@ -1034,6 +1053,7 @@ async fn r4_6() {
 // R5 — secrets
 // ======================================================================
 
+/// Invariant: RT-13.
 #[tokio::test]
 async fn r5_1() {
     const ID: &str = "R5.1";
@@ -1058,6 +1078,7 @@ async fn r5_1() {
     }
 }
 
+/// Invariant: RT-13.
 #[tokio::test]
 async fn r5_2() {
     const ID: &str = "R5.2";
@@ -1088,6 +1109,7 @@ async fn r5_2() {
     }
 }
 
+/// Invariant: RT-13.
 #[tokio::test]
 async fn r5_3() {
     const ID: &str = "R5.3";
@@ -1208,6 +1230,7 @@ async fn r6_3() {
     }
 }
 
+/// Invariant: RT-12.
 #[tokio::test]
 async fn r6_4() {
     const ID: &str = "R6.4";
@@ -1243,6 +1266,8 @@ async fn r6_4() {
 /// Apps built from one template share a digest, so the digest cannot name the
 /// app. If a backend namespaced data by the artifact rather than by the app
 /// the host named, the second app would read the first one's data.
+///
+/// Invariant: RT-12.
 #[tokio::test]
 async fn r6_7() {
     const ID: &str = "R6.7";
@@ -1357,6 +1382,7 @@ async fn r6_6() {
 // R7 — logs
 // ======================================================================
 
+/// Invariant: RT-9.
 #[tokio::test]
 async fn r7_1() {
     const ID: &str = "R7.1";
@@ -1390,6 +1416,7 @@ async fn r7_1() {
     }
 }
 
+/// Invariant: RT-9.
 #[tokio::test]
 async fn r7_2() {
     const ID: &str = "R7.2";

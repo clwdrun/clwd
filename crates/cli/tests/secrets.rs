@@ -92,6 +92,8 @@ fn text(bytes: &[u8]) -> String {
 
 /// The leak sweep. **The first assertion is the control**: if the secret is not
 /// actually stored and retrievable, every absence below proves nothing.
+///
+/// Invariant: CLI-6.
 #[test]
 fn a_stored_secret_never_appears_where_it_should_not() {
     let p = Project::new("leak");
@@ -140,6 +142,8 @@ fn a_stored_secret_never_appears_where_it_should_not() {
 
 /// A failure path is where a value most easily escapes: an error message that
 /// helpfully includes what it was given.
+///
+/// Invariant: CLI-6.
 #[test]
 fn no_error_message_echoes_a_value() {
     let p = Project::new("errors");
@@ -206,6 +210,8 @@ fn setting_from_an_empty_pipe_is_refused_with_the_shape_of_the_command() {
 
 /// The store is created private, checked on the artifact the CLI actually
 /// wrote rather than on the code that wrote it.
+///
+/// Invariant: CLI-5.
 #[cfg(unix)]
 #[test]
 fn the_store_the_binary_creates_is_owner_only() {
@@ -283,6 +289,8 @@ fn visit(dir: &Path, found: &mut Vec<PathBuf>) {
 /// file store return an undeclared secret would leave the suite green. Both
 /// secrets below live in the same namespace, so the manifest is the only thing
 /// separating them.
+///
+/// Invariant: RT-13.
 #[cfg(feature = "run")]
 #[test]
 fn a_guest_sees_only_the_secrets_its_manifest_declared() {

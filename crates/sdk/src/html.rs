@@ -89,6 +89,7 @@ impl Html {
 mod tests {
     use super::*;
 
+    /// Invariant: SDK-2.
     #[test]
     fn text_escapes_every_character_that_can_end_a_context() {
         let mut page = Html::new();

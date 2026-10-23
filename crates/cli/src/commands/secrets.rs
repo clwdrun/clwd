@@ -194,6 +194,8 @@ mod tests {
     /// Neither renderer may carry a value. `Listing` has no field for one, and
     /// this asserts the serialized shape rather than trusting the struct — a
     /// later `#[serde(flatten)]` would be caught here.
+    ///
+    /// Invariant: CLI-6.
     #[test]
     fn the_json_listing_carries_names_only() {
         let listing = Listing {
@@ -233,6 +235,8 @@ mod tests {
 
     /// `set` reports the byte count, which confirms the right thing arrived
     /// without disclosing what it was.
+    ///
+    /// Invariant: CLI-6.
     #[test]
     fn a_change_reports_a_size_but_never_a_value() {
         let c = Changed {

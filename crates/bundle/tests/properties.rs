@@ -5,11 +5,13 @@ use common::*;
 
 use clwd_bundle::{File, decode, encode};
 
+/// Invariant: BUN-1.
 #[test]
 fn packing_the_same_tree_twice_is_byte_identical() {
     assert_eq!(bundle(members()).bytes, bundle(members()).bytes);
 }
 
+/// Invariant: BUN-1.
 #[test]
 fn member_order_does_not_affect_output() {
     let mut reversed = members();
@@ -17,6 +19,7 @@ fn member_order_does_not_affect_output() {
     assert_eq!(bundle(members()).bytes, bundle(reversed).bytes);
 }
 
+/// Invariant: BUN-1.
 #[test]
 fn source_metadata_beyond_the_executable_bit_does_not_affect_output() {
     // mtime, uid and gid are never read from the source, so there is nothing to
@@ -44,6 +47,7 @@ fn the_executable_bit_does_affect_output() {
     );
 }
 
+/// Invariant: BUN-1.
 #[test]
 fn paths_are_normalized_so_the_same_tree_hashes_alike_on_any_platform() {
     // "é" as one codepoint (NFC, what Linux hands you) and as e + U+0301
@@ -53,6 +57,7 @@ fn paths_are_normalized_so_the_same_tree_hashes_alike_on_any_platform() {
     assert_eq!(bundle(nfc).digest, bundle(nfd).digest);
 }
 
+/// Invariant: BUN-1.
 #[test]
 fn encode_decode_encode_is_a_fixed_point() {
     let first = bundle(members());
@@ -62,6 +67,7 @@ fn encode_decode_encode_is_a_fixed_point() {
     assert_eq!(first.digest, again.digest);
 }
 
+/// Invariant: BUN-2.
 #[test]
 fn decode_rejects_a_flipped_byte_in_a_member() {
     let mut bytes = bundle(members()).bytes;
@@ -72,6 +78,7 @@ fn decode_rejects_a_flipped_byte_in_a_member() {
     assert_code(decode(&bytes, None), "bundle.member_digest_mismatch");
 }
 
+/// Invariant: BUN-2.
 #[test]
 fn a_flipped_byte_anywhere_changes_the_bundle_digest() {
     let original = bundle(members());
@@ -86,6 +93,7 @@ fn a_flipped_byte_anywhere_changes_the_bundle_digest() {
     }
 }
 
+/// Invariant: BUN-2.
 #[test]
 fn expected_digest_is_checked_before_the_archive_is_parsed() {
     // Structurally ruined bytes, but the caller said which bundle it wanted.

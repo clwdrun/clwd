@@ -131,6 +131,29 @@ impl clwd_sdk::exports::wasi::http::incoming_handler::Guest for Component {
             // A trap, so the host's trap mapping has something to map.
             "/trap" => panic!("guest panicked on purpose"),
 
+            // Everything a guest could reach without a grant: files, the
+            // environment, arguments, sockets and name lookup. Each probe
+            // reports what it got, so the test asserts on the outcome rather
+            // than on the guest's interpretation of it.
+            "/ambient" => {
+                let fs_root = std::fs::read_dir("/").map(|d| d.count());
+                let fs_cwd = std::fs::read_dir(".").map(|d| d.count());
+                let env = std::env::vars_os().count();
+                let args = std::env::args_os().count();
+                let tcp = std::net::TcpListener::bind("127.0.0.1:0").map(|_| ());
+                let udp = std::net::UdpSocket::bind("0.0.0.0:0").map(|_| ());
+                let dns = std::net::ToSocketAddrs::to_socket_addrs("localhost:80")
+                    .map(|a| a.count());
+                format!(
+                    "fs-root:{} fs-cwd:{} env:{env} args:{args} tcp:{} udp:{} dns:{}",
+                    fs_root.is_ok(),
+                    fs_cwd.is_ok(),
+                    tcp.is_ok(),
+                    udp.is_ok(),
+                    dns.is_ok(),
+                )
+            }
+
             // A clean exit from inside the guest. On the wasm backend the next
             // call rebuilds the instance, so this is just a normal return and
             // R2.2 is reached by the harness evicting the instance; a long-lived

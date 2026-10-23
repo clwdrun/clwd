@@ -8,6 +8,8 @@ use clwd_runtime::test_util::TestSandbox;
 use clwd_runtime::{Sandbox, SpawnOptions};
 
 /// The claim the whole design exists for.
+///
+/// Invariant: RT-2.
 #[tokio::test]
 async fn every_instance_observes_exactly_one_caller() {
     let (digest, bytes) = valid_bundle();
@@ -37,6 +39,8 @@ async fn every_instance_observes_exactly_one_caller() {
 /// Two callers get two instances. Nothing in the API can merge them, because
 /// the only way to reach an instance is a handle and the only way to get a
 /// handle is a spawn that consumed one identity.
+///
+/// Invariant: RT-2.
 #[tokio::test]
 async fn two_callers_never_share_an_instance() {
     let (digest, bytes) = valid_bundle();
@@ -59,6 +63,8 @@ async fn two_callers_never_share_an_instance() {
 /// A handle's identity is fixed at spawn and readable but not writable. There
 /// is no `identity_mut`, and this test exists so that adding one is a visible
 /// change rather than a quiet one.
+///
+/// Invariant: RT-2.
 #[tokio::test]
 async fn a_handle_identity_is_read_only_and_fixed_at_spawn() {
     let (digest, bytes) = valid_bundle();

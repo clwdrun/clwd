@@ -269,6 +269,8 @@ mod tests {
     /// past it keeps at most `SINK_CAPACITY` bytes, loses the rest, and leaves
     /// one line saying how much. Written the way a guest's `println!` arrives:
     /// the text, then its newline as a separate write.
+    ///
+    /// Invariant: RT-9.
     #[test]
     fn output_past_the_cap_is_dropped_and_counted_once() {
         let mut sink = LogSink::new(LogStreamKind::Stdout);

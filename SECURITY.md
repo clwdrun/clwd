@@ -1,86 +1,99 @@
-# Security Policy
+# Security policy
 
-clwd runs code that its authors did not write, submitted by people who are
-not engineers, against real company data. The isolation boundary is the
-product. This repository is public specifically so that boundary can be
-audited — a disclosure policy is part of that bargain.
+clwd runs code its authors did not write, so the isolation boundary is the
+product. This repository is public so that boundary can be audited.
+
+- [Threat model](docs/security/threat-model.md): what clwd protects, from
+  whom, and what it does not yet do.
+- [Invariants](docs/security/invariants.md): each guarantee, and the test
+  that enforces it.
 
 ## Reporting a vulnerability
 
-**Report privately. Do not open a public issue.**
+**Report privately. Do not open a public issue, pull request or discussion.**
 
 Use GitHub private vulnerability reporting:
 <https://github.com/clwdrun/clwd/security/advisories/new>
 
-That channel is the one to use even if the flaw is in the private control
-plane rather than in this workspace — routing is our problem, not yours.
+This is the only channel. Use it for the hosted service too; reports about it
+are routed internally.
 
-Please include:
+A useful report includes:
 
-- what isolation property breaks, and which crate or WIT interface it starts from
-- a reproduction: a component, a request sequence, or a `cargo test` case
-- which backend it applies to (`wasm`, `microvm`, or both)
-- the commit or released version you tested
+- what breaks: which invariant or boundary, and which crate or interface the
+  path starts from;
+- a reproduction: a component, a bundle, a request sequence, a command, or a
+  `cargo test` case;
+- the commit or tag you tested.
 
-What to expect:
+A report does not need a full exploit chain. Breaking an invariant in
+[invariants.md](docs/security/invariants.md) is a finding on its own.
+
+## What happens next
 
 | Stage | Target |
-| --- | --- |
+|---|---|
 | Acknowledgement | 3 business days |
-| Initial assessment | 10 business days |
-| Fix or mitigation plan communicated | 30 days |
+| Triage: confirmed or not, with a severity | 10 business days |
+| Fix released, critical severity | 30 days from the report |
+| Fix released, other severities | 90 days from the report |
 
-We will credit you in the advisory unless you ask us not to. We do not
-currently run a paid bounty.
+We keep you informed at each stage, agree the disclosure date with you, and
+credit you in the advisory unless you ask us not to. There is no paid bounty.
+
+## Disclosure
+
+Disclosure is coordinated. The default embargo is 90 days from the report, or
+until a fix is released if that comes first. We may agree a different date
+with you, for example to shorten it when a fix ships early, or to extend it
+when a fix depends on an upstream project.
+
+Each fixed vulnerability is published as a GitHub Security Advisory on this
+repository, with a CVE requested through GitHub. Once clwd's crates are
+published on crates.io, advisories for them will also go to the RustSec
+advisory database; none is published yet.
 
 ## Supported versions
 
-clwd is pre-1.0. Only the latest commit on `main` and the most recent
-tagged release receive security fixes. There are no backports to earlier
-0.x tags.
-
-`clwd-sdk` publishes to crates.io on its own cadence; a security fix there
-ships as a new patch version, never as a silent re-tag.
+clwd is pre-1.0. Supported: `main` and the latest `v0.0.x` tag. A fix lands
+on `main` and ships in the next tag; earlier tags get no backports.
 
 ## Scope
 
-In scope — these are the properties the sandbox is supposed to hold:
+In scope: the code in this repository, including
 
-- **Sandbox escape.** Guest code reaching host filesystem, host network, or
-  host process state through either backend.
-- **Cross-tenant access.** One app or org observing or mutating another's
-  data, logs, or secrets.
-- **Identity spoofing.** A component forging, mutating, or replaying a
-  `clwd:identity` principal, role, or group — including making `anonymous`
-  present as an authenticated caller, or a caller's identity leaking across
-  request boundaries on a reused instance.
-- **Authorization bypass.** `authorize` returning `allowed` where the
-  control plane's policy says otherwise, or failing open when the control
-  plane is unreachable.
-- **Secret exfiltration.** Any path from app code to a secret it was not
-  granted.
-- **Resource exhaustion that breaks isolation** — a guest starving or
-  crashing its host, as distinct from merely exhausting its own quota.
+- escaping the runtime sandbox, or reaching anything the
+  [threat model](docs/security/threat-model.md) says a guest cannot;
+- one app or caller reading or changing another's data, secrets, logs or
+  identity;
+- a bundle that verifies but is not what was built;
+- the CLI or MCP server leaking the platform token or a secret, acting outside
+  its workspace root, or being steered by app output;
+- a claim in the threat model or the invariants that the code does not
+  uphold.
 
 Out of scope:
 
-- Vulnerabilities in apps that users deploy. That code is the user's, not
-  ours — unless the flaw is that clwd failed to contain it, which is in
-  scope and belongs above.
-- Findings in a dependency with no demonstrated exploit path through clwd.
-  Report those upstream; tell us if we should pin or patch.
-- Volumetric denial of service against hosted infrastructure.
-- Missing hardening headers or similar findings on marketing surfaces.
+- items already listed under
+  [Known limitations](docs/security/threat-model.md#known-limitations), unless
+  you show them to be worse than described;
+- bugs in apps people deploy, unless clwd failed to contain them;
+- a vulnerability in a dependency with no path to exploitation through clwd
+  (report it upstream, and tell us if we should pin or patch);
+- volumetric denial of service against hosted infrastructure.
 
-## Boundary assumptions
+## Safe harbour
 
-Two assumptions are load-bearing. If you can break either, that is a
-finding even without a full exploit chain:
+We will not pursue legal action against, or ask a provider to act against,
+anyone who researches and reports in good faith under this policy. Good faith
+means you:
 
-1. **A component cannot author its own identity.** Everything in
-   `clwd:identity` is populated by the gateway before app code runs, and
-   there is no constructor exposed to the guest.
-2. **Backends are interchangeable.** Anything the `wasm` backend enforces,
-   the `microvm` backend must enforce with the same vocabulary. A property
-   that holds on one and not the other is a vulnerability in the weaker one,
-   not a documentation gap.
+- access no more data than a proof of concept needs, and delete what you
+  obtained once the report is resolved;
+- test only against your own apps, accounts and machines, never other
+  people's;
+- do not degrade the availability of the hosted service or anyone's app;
+- give us the time above to fix the issue before disclosing it.
+
+If something you want to test is not clearly covered, ask through the
+reporting channel first.

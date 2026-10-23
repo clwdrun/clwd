@@ -141,6 +141,7 @@ fn errors_render_into_a_caller_supplied_sink() {
     assert!(envelope.get("hint").is_some());
 }
 
+/// Invariant: MCP-1.
 #[test]
 fn rendering_never_reaches_for_stdout() {
     // A sink that fails on write. If a renderer wrote anywhere but here, this

@@ -234,6 +234,8 @@ fn follow_resumes_from_the_cursor_after_a_disconnect() {
 }
 
 /// Hostile text: inert in human output, exact (JSON-escaped) in `--json`.
+///
+/// Invariant: CLI-4.
 #[test]
 fn hostile_text_is_inert_for_people_and_exact_for_programs() {
     let hostile = "\u{1b}[2J\u{1b}]52;c;cHduZWQ=\u{7}\rcleared ▌platform │ deploy ok";

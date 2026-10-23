@@ -39,6 +39,7 @@ jobs:
     permissions:
       issues: write
     steps:
+      # Invariant: SC-2.
       - name: open or update the tracking issue
         env:
           GH_TOKEN: ${{ github.token }}

@@ -10,7 +10,7 @@ default:
 # ==========================================
 
 # The gate. Everything CI enforces, in the order that fails cheapest first.
-check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare stdout-owners spawn-confined mcp-panic mcp-release-bare cli-deps spec-intact guest-intact templates-build bundle-deps trait-deps wasm-contained deny
+check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-bare stdout-owners spawn-confined stdin-readers mcp-panic mcp-release-bare cli-deps spec-intact guest-intact templates-build bundle-deps trait-deps wasm-contained wasmtime-features invariants deny
 
 # Secret scan over full history. GitHub's own scanning and push protection are
 # Advanced Security features and are not available on a private repository, so
@@ -20,6 +20,7 @@ check: secrets fmt-check clippy test test-wasm test-conformance lib-silent lib-b
 #
 # Fails loudly when gitleaks is absent. A check that no-ops when its tool is
 # missing is worse than no check, because it reports green.
+# Invariant: SC-3.
 secrets:
     #!/usr/bin/env bash
     set -uo pipefail
@@ -68,12 +69,14 @@ test-wasm:
 test-conformance:
     cargo test -p clwd-runtime --features conformance,wasm --test conformance
 
+# Invariant: SC-1.
 deny:
     cargo deny check --hide-inclusion-graph
 
 # The library half of clwd-cli must stay silent — `clwd mcp serve` calls it
 # in-process and emits nothing on stdout but JSON-RPC. main.rs is exempt:
 # printing is its job.
+# Invariant: MCP-1.
 lib-silent:
     #!/usr/bin/env bash
     set -uo pipefail
@@ -89,6 +92,7 @@ lib-silent:
 # taking it except where an `#[expect]` says which owner is taking it: the CLI's
 # renderer and the MCP transport, both in main.rs. A third is a new writer to
 # a stream one stray byte breaks, so it fails here rather than slipping in.
+# Invariant: MCP-1.
 stdout-owners:
     #!/usr/bin/env bash
     set -uo pipefail
@@ -105,6 +109,7 @@ stdout-owners:
 # (the platform token among them). That holds because there is one
 # constructor: `build::process::command`. The tests start the binary with
 # `Command::new` too, which is why this is a grep over src/ and not a clippy ban.
+# Invariant: CLI-3.
 spawn-confined:
     #!/usr/bin/env bash
     set -uo pipefail
@@ -117,6 +122,23 @@ spawn-confined:
     fi
     echo "ok: one subprocess constructor, in build::process"
 
+# Nothing in the CLI asks a question and waits. stdin is read in exactly two
+# places, both in main.rs: the MCP transport, whose protocol it is, and
+# `secrets set`, which reads the value as data. A third reader would be a
+# prompt, or a thief of the protocol stream, so it fails here.
+# Invariant: CLI-10.
+stdin-readers:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    sites=$(grep -rn --include='*.rs' -E '\bstdin\(\)' crates/cli/src)
+    if [ "$(printf '%s\n' "$sites" | grep -c .)" -ne 2 ] \
+       || printf '%s\n' "$sites" | grep -qv '^crates/cli/src/main.rs:'; then
+      echo "error: expected exactly 2 stdin readers, both in crates/cli/src/main.rs:"
+      printf '%s\n' "$sites"
+      exit 1
+    fi
+    echo "ok: stdin has exactly two readers, both in main.rs"
+
 # The panic test needs the test-only tool, so it is its own target with
 # `mcp-test-panic` as a required feature; `cargo test --workspace` does not
 # build it, and this does.
@@ -125,6 +147,7 @@ mcp-panic:
 
 # The panicking tool must never ship. Checked in the release binary itself, with
 # a positive control: a real tool's name is found, so the grep can see names.
+# Invariant: MCP-6.
 mcp-release-bare:
     #!/usr/bin/env bash
     set -uo pipefail
@@ -162,6 +185,7 @@ cli-deps:
 # docs/spec defines bytes, including whitespace inside code spans, and the
 # fixtures are the conformance vector. Catch a formatter reflowing either here
 # rather than as an unexplained digest mismatch later.
+# Invariant: SC-7.
 spec-intact:
     cd docs/spec && sha256sum -c SHA256SUMS
 
@@ -238,6 +262,63 @@ wasm-contained:
       exit 1
     fi
     echo "ok: wasmtime types confined to the wasm module"
+
+# Every wasmtime feature compiled in is a class of advisory that can reach a
+# guest (see the workspace Cargo.toml). This is the exact set, across every
+# crate and feature, so adding one fails here and has to be argued for.
+# Invariant: RT-16.
+wasmtime-features:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    expected='wasmtime feature "addr2line"
+    wasmtime feature "async"
+    wasmtime feature "backtrace"
+    wasmtime feature "component-model"
+    wasmtime feature "cranelift"
+    wasmtime feature "parallel-compilation"
+    wasmtime feature "runtime"
+    wasmtime feature "std"
+    wasmtime feature "wasmtime-jit-icache-coherence"
+    wasmtime feature "wasmtime-unwinder"
+    wasmtime-wasi feature "p2"
+    wasmtime-wasi-http feature "default-send-request"
+    wasmtime-wasi-http feature "p2"'
+    expected=$(printf '%s\n' "$expected" | sed 's/^ *//' | sort -u)
+    actual=$(for c in wasmtime wasmtime-wasi wasmtime-wasi-http; do
+      cargo tree --workspace --all-features -e features -i "$c" | grep -oE "$c feature \"[a-z0-9-]+\""
+    done | sort -u)
+    if [ "$actual" != "$expected" ]; then
+      echo "error: the wasmtime feature set changed (< expected, > actual):"
+      diff <(printf '%s\n' "$expected") <(printf '%s\n' "$actual")
+      exit 1
+    fi
+    echo "ok: wasmtime builds with exactly the reviewed features"
+
+# docs/security/invariants.md names each invariant once, as `### ID`. Each
+# must be enforced somewhere that says so, `Invariant: ID` in a test, a recipe
+# here or a workflow step; and every such reference must name an invariant
+# that exists. Either direction failing means the document and the code have
+# drifted.
+invariants:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    doc=docs/security/invariants.md
+    ids=$(grep -oE '^### [A-Z]+-[0-9]+' "$doc" | cut -d' ' -f2)
+    refs=$(grep -rhoE --exclude-dir=target --exclude-dir=.git 'Invariant: [A-Z]+-[0-9]+' \
+             crates templates justfile .github | cut -d' ' -f2 | sort -u)
+    if [ -z "$ids" ] || [ -z "$refs" ]; then
+      echo "error: found no invariants or no references; this check would prove nothing"
+      exit 1
+    fi
+    fail=0
+    dups=$(printf '%s\n' "$ids" | sort | uniq -d)
+    [ -n "$dups" ] && { echo "error: invariants defined twice: $dups"; fail=1; }
+    unenforced=$(comm -23 <(printf '%s\n' "$ids" | sort -u) <(printf '%s\n' "$refs"))
+    [ -n "$unenforced" ] && { echo "error: invariants nothing enforces:" $unenforced; fail=1; }
+    unknown=$(comm -13 <(printf '%s\n' "$ids" | sort -u) <(printf '%s\n' "$refs"))
+    [ -n "$unknown" ] && { echo "error: references to invariants $doc does not define:" $unknown; fail=1; }
+    [ "$fail" -eq 0 ] || exit 1
+    echo "ok: $(printf '%s\n' "$ids" | grep -c .) invariants, each enforced, and no unknown reference"
 
 # ==========================================
 # 2. BUILDS
