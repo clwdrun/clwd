@@ -179,6 +179,7 @@ mod tests {
         assert!(token_from_file(&s.path()).expect("read").is_none());
     }
 
+    /// Invariant: CLI-1.
     #[cfg(unix)]
     #[test]
     fn an_owner_only_file_yields_the_token() {
@@ -194,6 +195,7 @@ mod tests {
         );
     }
 
+    /// Invariant: CLI-1.
     #[cfg(unix)]
     #[test]
     fn a_world_readable_token_file_is_refused() {

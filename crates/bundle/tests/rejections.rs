@@ -24,6 +24,7 @@ fn magic_invalid() {
     reject(&bytes, "bundle.magic_invalid");
 }
 
+/// Invariant: BUN-4.
 #[test]
 fn entry_type_invalid() {
     let mut bytes = bundle(members()).bytes;
@@ -79,6 +80,7 @@ fn size_encoding_invalid() {
     reject(&bytes, "bundle.size_encoding_invalid");
 }
 
+/// Invariant: BUN-5.
 #[test]
 fn member_too_large() {
     // Never reachable from a header: eleven octal digits cannot express it.
@@ -115,6 +117,7 @@ fn trailer_invalid() {
 
 // ----------------------------------------------------------------- paths
 
+/// Invariant: BUN-3.
 #[test]
 fn path_invalid() {
     for path in [
@@ -128,6 +131,7 @@ fn path_invalid() {
     }
 }
 
+/// Invariant: BUN-3.
 #[test]
 fn path_not_nfc() {
     // The encoder normalizes, so this can only be built by hand — which is
@@ -136,12 +140,14 @@ fn path_not_nfc() {
     reject(&bytes, "bundle.path_not_nfc");
 }
 
+/// Invariant: BUN-3.
 #[test]
 fn path_too_long() {
     let path = format!("{}.wasm", "a".repeat(101));
     assert_code(try_bundle(one_member(&path, b"x")), "bundle.path_too_long");
 }
 
+/// Invariant: BUN-3.
 #[test]
 fn path_duplicate() {
     let files = vec![
@@ -181,12 +187,14 @@ fn schema_version_missing() {
     reject(&with_manifest(&text), "bundle.schema_version_missing");
 }
 
+/// Invariant: BUN-6.
 #[test]
 fn schema_version_unsupported() {
     let text = valid_manifest_text().replace("schema_version = 1", "schema_version = 2");
     reject(&with_manifest(&text), "bundle.schema_version_unsupported");
 }
 
+/// Invariant: BUN-6.
 #[test]
 fn unknown_key() {
     // §7.1: rejected wherever it appears, not only at the top level.
@@ -205,6 +213,7 @@ fn unknown_key() {
     reject(&with_manifest(&in_member), "bundle.unknown_key");
 }
 
+/// Invariant: BUN-6.
 #[test]
 fn capability_unknown_key() {
     let in_caps = valid_manifest_text().replace("egress = []", "egress = []\ngpu = true");
@@ -217,6 +226,7 @@ fn capability_unknown_key() {
     reject(&with_manifest(&in_limits), "bundle.capability_unknown_key");
 }
 
+/// Invariant: BUN-6.
 #[test]
 fn capabilities_version_unsupported() {
     // Anchored to the table header: "version = 1" also matches inside
@@ -229,18 +239,21 @@ fn capabilities_version_unsupported() {
     );
 }
 
+/// Invariant: BUN-6.
 #[test]
 fn field_missing() {
     let text = valid_manifest_text().replace("memory_mb = 128\n", "");
     reject(&with_manifest(&text), "bundle.field_missing");
 }
 
+/// Invariant: BUN-6.
 #[test]
 fn field_type_invalid() {
     let text = valid_manifest_text().replace("size = 8", "size = \"8\"");
     reject(&with_manifest(&text), "bundle.field_type_invalid");
 }
 
+/// Invariant: BUN-6.
 #[test]
 fn field_value_invalid() {
     let zero = valid_manifest_text().replace("cpu_ms = 5000", "cpu_ms = 0");
@@ -262,6 +275,7 @@ fn runtime_unknown() {
     reject(&with_manifest(&text), "bundle.runtime_unknown");
 }
 
+/// Invariant: BUN-6.
 #[test]
 fn manifest_not_canonical() {
     // Parses to exactly the same model; different bytes, so a different bundle
@@ -281,12 +295,14 @@ fn manifest_self_listed() {
     reject(&with_manifest(&text), "bundle.manifest_self_listed");
 }
 
+/// Invariant: BUN-5.
 #[test]
 fn member_missing() {
     let text = valid_manifest_text().replace("path = \"app.wasm\"", "path = \"ghost.wasm\"");
     reject(&with_manifest(&text), "bundle.member_missing");
 }
 
+/// Invariant: BUN-5.
 #[test]
 fn member_unlisted() {
     let text = valid_manifest_text();
@@ -298,12 +314,14 @@ fn member_unlisted() {
     reject(&bytes, "bundle.member_unlisted");
 }
 
+/// Invariant: BUN-5.
 #[test]
 fn member_size_mismatch() {
     let text = valid_manifest_text().replace("size = 8", "size = 7");
     reject(&with_manifest(&text), "bundle.member_size_mismatch");
 }
 
+/// Invariant: BUN-2.
 #[test]
 fn member_digest_mismatch() {
     let text = valid_manifest_text().replace(
@@ -342,6 +360,7 @@ fn entrypoint_not_a_member() {
     reject(&with_manifest(&text), "bundle.entrypoint_not_a_member");
 }
 
+/// Invariant: BUN-7.
 #[test]
 fn wasm_not_component() {
     // Valid WebAssembly, and still rejected: #16 requires a component, and
@@ -350,6 +369,7 @@ fn wasm_not_component() {
     reject(&packed.bytes, "bundle.wasm_not_component");
 }
 
+/// Invariant: BUN-7.
 #[test]
 fn wasm_preamble_invalid() {
     let packed = bundle(one_member("app.wasm", b"#!/bin/sh\n"));
@@ -358,6 +378,7 @@ fn wasm_preamble_invalid() {
 
 // ---------------------------------------------------------------- bundle
 
+/// Invariant: BUN-2.
 #[test]
 fn digest_mismatch() {
     let packed = bundle(members());
@@ -367,6 +388,8 @@ fn digest_mismatch() {
 
 /// The catalogue is only as good as its coverage. This asserts every code in
 /// the specification is named by a test in this file.
+///
+/// Invariant: BUN-8.
 #[test]
 fn every_catalogue_entry_has_a_test() {
     let spec = include_str!("../../../docs/spec/bundle-v1.md");

@@ -259,6 +259,8 @@ mod tests {
     /// A subject that cannot appear in a key is refused, not mangled. Two
     /// subjects squashed into one key would put two callers in one namespace,
     /// which is a data leak rather than a formatting problem.
+    ///
+    /// Invariant: SDK-3.
     #[test]
     fn a_subject_outside_the_grammar_is_refused_rather_than_reshaped() {
         for bad in [
@@ -295,6 +297,7 @@ mod tests {
         }
     }
 
+    /// Invariant: SDK-3.
     #[test]
     fn two_callers_do_not_collide() {
         let a = for_caller(&user("alice")).expect("subject");
@@ -304,6 +307,8 @@ mod tests {
 
     /// A per-caller key must not be able to land on an app-wide one, however
     /// the author names it.
+    ///
+    /// Invariant: SDK-3.
     #[test]
     fn a_caller_key_cannot_collide_with_an_app_wide_key() {
         let ns = for_caller(&user("alice")).expect("subject");
@@ -313,6 +318,8 @@ mod tests {
 
     /// Anonymous has no namespace, and the type says so rather than inventing
     /// one that every anonymous caller would share.
+    ///
+    /// Invariant: SDK-3.
     #[test]
     fn an_anonymous_caller_has_no_private_namespace() {
         assert!(for_caller(&Caller::Anonymous).is_none());

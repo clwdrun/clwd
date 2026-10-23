@@ -103,6 +103,8 @@ fn canonical_manifest_matches_the_specification_text() {
 
 /// The vector as a committed byte fixture. Regenerate deliberately with
 /// `just spec-reseal` after a spec change, never to make this test pass.
+///
+/// Invariant: BUN-1.
 #[test]
 fn matches_the_committed_fixture() {
     let fixture = include_bytes!("../../../docs/spec/fixtures/conformance-v1.clwd");

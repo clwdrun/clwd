@@ -335,6 +335,7 @@ fn a_pending_certificate_is_reported_and_the_deploy_still_succeeds() {
     stub.requests();
 }
 
+/// Invariant: CLI-8.
 #[test]
 fn a_missing_host_label_fails_before_any_build_or_request() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
@@ -352,6 +353,7 @@ fn a_missing_host_label_fails_before_any_build_or_request() {
     assert_no_request(&listener);
 }
 
+/// Invariant: CLI-8.
 #[test]
 fn an_invalid_host_label_fails_before_any_build_or_request() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");

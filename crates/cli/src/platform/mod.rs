@@ -340,6 +340,8 @@ mod tests {
     }
 
     /// A malformed token must not be echoed back in the error that rejects it.
+    ///
+    /// Invariant: CLI-2.
     #[test]
     fn a_rejected_token_is_not_repeated_in_the_error() {
         let secret = "clwd_tok_this_is_the_secret_that_must_not_leak_even_when_rejected";
@@ -351,6 +353,8 @@ mod tests {
     }
 
     /// The whole point of building on `SecretValue`: a token cannot be formatted.
+    ///
+    /// Invariant: CLI-2.
     #[test]
     fn a_token_redacts_itself_in_debug() {
         let token = Token::parse(VALID_TOKEN).expect("valid");

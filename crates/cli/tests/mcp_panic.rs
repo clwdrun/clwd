@@ -11,6 +11,7 @@ use std::process::{Command, Stdio};
 
 use serde_json::{Value, json};
 
+/// Invariant: MCP-1.
 #[test]
 fn a_panicking_tool_never_reaches_stdout() {
     let meta = json!({

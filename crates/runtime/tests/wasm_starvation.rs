@@ -31,6 +31,7 @@ const WORKERS: usize = 2;
 const SPINNERS: usize = 8;
 const CPU_MS: u64 = 50;
 
+/// Invariant: RT-5.
 #[test]
 fn spinning_guests_cannot_starve_the_epoch_ticker() {
     let (tx, rx) = mpsc::channel();

@@ -415,6 +415,8 @@ mod tests {
     /// The permission claim, asserted on the artifact rather than assumed from
     /// the open flags. A umask cannot widen a mode, but a pre-existing file
     /// keeps its own, so this is the check that would catch a regression.
+    ///
+    /// Invariant: CLI-5.
     #[cfg(unix)]
     #[test]
     fn the_file_is_owner_only_and_so_is_its_directory() {
@@ -442,6 +444,8 @@ mod tests {
 
     /// A file someone widened is refused rather than used. Writing a secret
     /// into a world-readable file is the failure this store exists to prevent.
+    ///
+    /// Invariant: CLI-5.
     #[cfg(unix)]
     #[test]
     fn a_world_readable_store_is_refused() {
@@ -505,6 +509,8 @@ mod tests {
     }
 
     /// Namespaces do not leak into one another.
+    ///
+    /// Invariant: CLI-5.
     #[test]
     fn one_apps_secrets_are_invisible_to_another() {
         let s = Scratch::new("namespaces");

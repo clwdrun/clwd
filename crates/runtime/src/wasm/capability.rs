@@ -189,6 +189,7 @@ mod tests {
         EgressPolicy::from_manifest(&grants.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>())
     }
 
+    /// Invariant: RT-10.
     #[test]
     fn an_empty_egress_list_denies_every_host() {
         let p = EgressPolicy::default();
@@ -198,6 +199,7 @@ mod tests {
         assert!(!policy(&[]).allows("example.com"));
     }
 
+    /// Invariant: RT-10.
     #[test]
     fn an_exact_host_matches_only_itself() {
         let p = policy(&["api.example.com"]);
@@ -209,6 +211,8 @@ mod tests {
 
     /// The rule most likely to be gotten wrong later: `*.example.com` matches a
     /// subdomain but NOT the apex. Both directions asserted.
+    ///
+    /// Invariant: RT-10.
     #[test]
     fn a_suffix_wildcard_matches_subdomains_but_not_the_apex() {
         let p = policy(&["*.example.com"]);
@@ -228,6 +232,7 @@ mod tests {
         );
     }
 
+    /// Invariant: RT-10.
     #[test]
     fn matching_is_case_insensitive() {
         assert!(policy(&["API.Example.COM"]).allows("api.example.com"));
@@ -246,6 +251,8 @@ mod tests {
     }
 
     /// Deny-by-default: an empty grant refuses every key, whatever its shape.
+    ///
+    /// Invariant: RT-11.
     #[test]
     fn an_empty_storage_grant_denies_all_app_data() {
         let p = StoragePolicy::default();
@@ -275,6 +282,8 @@ mod tests {
     /// `HttpRequestDenied` — **before any connection is attempted**. A hook that
     /// failed to deny would instead attempt to send and fail with a connect/DNS
     /// error, so asserting the exact denial code proves the request never left.
+    ///
+    /// Invariant: RT-10.
     #[tokio::test]
     async fn a_disallowed_host_is_denied_before_the_request_leaves() {
         use http_body_util::BodyExt as _;

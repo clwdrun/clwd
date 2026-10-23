@@ -156,6 +156,8 @@ fn json_output_carries_the_response_and_the_identity() {
 /// **The local identity is obviously local.** #29's templates will show app
 /// authors reading `ctx().caller()`, and what they read on a laptop must not
 /// look like a production subject.
+///
+/// Invariant: DEV-2.
 #[test]
 fn the_local_caller_is_not_mistakable_for_a_production_one() {
     let scratch = Scratch::new("identity");
@@ -396,6 +398,8 @@ fn a_missing_bundle_is_not_found() {
 
 /// Errors never reach stdout, whichever renderer is selected. #32 speaks
 /// JSON-RPC on stdout and one stray byte corrupts it.
+///
+/// Invariant: CLI-9.
 #[test]
 fn run_failures_never_write_to_stdout() {
     let scratch = Scratch::new("purity");

@@ -37,6 +37,8 @@ async fn a_full_round_trip_serves_a_response() {
 /// Agents pattern-match old templates, so an app built against the previous
 /// identity interface will be deployed. It must fail at spawn with an error
 /// that names the interface and its version, not trap mid-request.
+///
+/// Invariant: RT-17.
 #[tokio::test]
 async fn a_component_built_against_identity_0_1_is_refused_at_spawn() {
     let (digest, bytes) = bundle_of(GUEST_IDENTITY_0_1);
@@ -60,6 +62,8 @@ async fn a_component_built_against_identity_0_1_is_refused_at_spawn() {
 
 /// A host with persistent stores installs `AppIdRequired`, so a spawn that
 /// forgets to name its app fails instead of falling back to a digest.
+///
+/// Invariant: RT-12.
 #[tokio::test]
 async fn app_id_required_refuses_a_spawn_that_names_no_app() {
     let (digest, bytes) = bundle_of(GUEST);
@@ -90,6 +94,8 @@ async fn app_id_required_refuses_a_spawn_that_names_no_app() {
 
 /// Responses are buffered, so the cap is what keeps a guest from choosing how
 /// much host memory a request takes. At the cap is served; one byte over fails.
+///
+/// Invariant: RT-8.
 #[tokio::test]
 async fn a_response_body_past_the_cap_is_refused() {
     let (sandbox, digest) = sandbox();
@@ -143,6 +149,8 @@ async fn a_response_body_past_the_cap_is_refused() {
 /// A host that spawns and stops once per request must end where it started.
 /// Each entry holds a copy of its app's secrets, so a `stop` that only marks
 /// the entry grows memory, and the secrets in it, with every request served.
+///
+/// Invariant: RT-18.
 #[tokio::test]
 async fn stop_removes_the_instance() {
     let (sandbox, digest) = sandbox();
@@ -172,6 +180,8 @@ async fn stop_removes_the_instance() {
 /// performance and silently withdrawn a documented guarantee. That is the
 /// failure this assertion exists to make loud — it is not an observation about
 /// counters.
+///
+/// Invariant: RT-1.
 #[tokio::test]
 async fn guest_state_never_survives_into_the_next_request() {
     let (sandbox, digest) = sandbox();
@@ -195,6 +205,30 @@ async fn guest_state_never_survives_into_the_next_request() {
         "1",
         "guest state survived into the next request: the per-invocation \
          instantiation guarantee documented on the wasm module has been withdrawn"
+    );
+}
+
+/// A guest has no ambient authority: no filesystem, no environment, no
+/// arguments, no sockets and no name lookup. Everything it reaches is an
+/// interface the host grants per manifest. The guest imports every one of
+/// these interfaces and the linker provides them, so this is the context the
+/// host builds that denies them, not a missing import.
+///
+/// Invariant: RT-15.
+#[tokio::test]
+async fn a_guest_has_no_ambient_authority() {
+    let (sandbox, digest) = sandbox();
+    let handle = sandbox
+        .spawn(digest, user("alice"), SpawnOptions::default())
+        .await
+        .expect("spawns");
+    let response = sandbox
+        .invoke(&handle, get("/ambient"), InvokeOptions::default())
+        .await
+        .expect("invokes");
+    assert_eq!(
+        text(&response),
+        "fs-root:false fs-cwd:false env:0 args:0 tcp:false udp:false dns:false"
     );
 }
 
@@ -266,6 +300,8 @@ async fn a_trapping_guest_yields_runtime_trap_with_its_message() {
 /// component or the `Engine`, one caller's bug would take out every other
 /// caller of the same bundle — the cross-caller failure this whole backend is
 /// built to prevent.
+///
+/// Invariant: RT-14.
 #[tokio::test]
 async fn a_trap_does_not_poison_the_cache_for_other_callers() {
     let (sandbox, digest) = sandbox();
@@ -403,6 +439,8 @@ async fn concurrent_spawns_of_an_uncached_bundle_compile_once() {
 
 /// Defence in depth, gate one: `clwd-bundle` refuses a core module at ingest,
 /// so it never reaches wasmtime through `spawn`.
+///
+/// Invariant: RT-17.
 #[tokio::test]
 async fn a_core_module_is_rejected_at_ingest() {
     let (digest, bytes) = bundle_of(CORE_MODULE);

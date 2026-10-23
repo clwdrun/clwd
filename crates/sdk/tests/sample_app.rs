@@ -61,6 +61,8 @@ fn every_error_maps_to_a_sane_status() {
 
 /// The reason a message is `&'static str`: there is no way to put a value in
 /// one. If a variant ever gains a field, this stops compiling.
+///
+/// Invariant: SDK-4.
 #[test]
 fn an_error_message_cannot_carry_caller_supplied_data() {
     let e = Error::BadRequest;

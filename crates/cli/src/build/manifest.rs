@@ -315,6 +315,7 @@ mod tests {
         assert!(err.to_string().contains("jvm"), "got: {err}");
     }
 
+    /// Invariant: CLI-8.
     #[test]
     fn a_host_label_is_an_rfc_1123_label() {
         for good in ["a", "notes", "my-app-2", "0day", &"a".repeat(63)] {

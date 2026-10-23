@@ -506,6 +506,7 @@ impl serde_json::ser::Formatter for Inert {
 mod tests {
     use super::*;
 
+    /// Invariant: MCP-2.
     #[test]
     fn inert_json_escapes_what_a_display_would_act_on_and_parses_back() {
         let value = json!({ "text": "a\u{1b}[2Jb\u{202e}c\u{7f}d\u{85}e\tf\ng" });

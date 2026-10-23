@@ -173,6 +173,7 @@ const XSS_ESCAPED: &str = "&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;";
 
 // ---- hello -----------------------------------------------------------------
 
+/// Invariant: SDK-1.
 #[tokio::test]
 async fn hello_greets_the_caller_by_verified_email() {
     let app = serve(
@@ -195,6 +196,7 @@ async fn hello_greets_the_caller_by_verified_email() {
     );
 }
 
+/// Invariant: SDK-2.
 #[tokio::test]
 async fn hello_escapes_an_email_that_contains_markup() {
     let email = format!("{XSS}@example.com");
@@ -238,6 +240,7 @@ fn note_ids(page: &str) -> Vec<String> {
         .collect()
 }
 
+/// Invariant: SDK-1.
 #[tokio::test]
 async fn notes_lists_an_empty_page_with_a_form_that_posts() {
     let app = serve("notes", user(ALICE, None), Arc::default()).await;
@@ -274,6 +277,7 @@ async fn notes_creates_lists_and_deletes() {
     assert!(!page.body.contains("buy milk"), "{}", page.body);
 }
 
+/// Invariant: SDK-2.
 #[tokio::test]
 async fn notes_escapes_a_stored_note_that_contains_markup() {
     let app = serve("notes", user(ALICE, None), Arc::default()).await;
@@ -287,6 +291,8 @@ async fn notes_escapes_a_stored_note_that_contains_markup() {
 }
 
 /// The template's reason to exist: one person's notes are invisible to another.
+///
+/// Invariant: SDK-3.
 #[tokio::test]
 async fn notes_are_private_to_the_caller_who_wrote_them() {
     let store = Arc::new(Counting::default());

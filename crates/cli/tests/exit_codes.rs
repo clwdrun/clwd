@@ -134,6 +134,8 @@ fn every_failing_json_path_produces_the_envelope() {
 /// and a single stray byte from an unrelated failure corrupts that stream. Clap
 /// wrote to stderr already; this pins it so a later change cannot quietly move
 /// it.
+///
+/// Invariant: CLI-9.
 #[test]
 fn failures_never_write_to_stdout() {
     for args in [

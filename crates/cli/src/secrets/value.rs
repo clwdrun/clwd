@@ -179,6 +179,8 @@ mod tests {
     use super::*;
 
     /// The realistic leak: a value reaching a log line through `{:?}`.
+    ///
+    /// Invariant: CLI-6.
     #[test]
     fn debug_never_renders_the_value() {
         let v = SecretValue::new(b"hunter2-the-actual-secret".to_vec());

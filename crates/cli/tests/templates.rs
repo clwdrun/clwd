@@ -88,6 +88,8 @@ fn code(src: &str) -> Code {
 /// No authentication code: the host decides who is calling before the app
 /// runs. A template that handles cookies, tokens or sessions teaches every app
 /// copied from it to do the same.
+///
+/// Invariant: TPL-1.
 #[test]
 fn no_template_contains_auth_code() {
     const FORBIDDEN: &[&str] = &[
@@ -112,6 +114,8 @@ fn no_template_contains_auth_code() {
 
 /// Identity comes only from `caller()`. A form field, query parameter or
 /// header naming a user is whatever the client chose to send.
+///
+/// Invariant: TPL-1.
 #[test]
 fn no_template_reads_identity_from_the_request() {
     const NAMES: &[&str] = &[
@@ -137,6 +141,8 @@ fn no_template_reads_identity_from_the_request() {
 /// Every response with a body goes through `Response::html` or
 /// `Response::text`, which set the content type and `nosniff`. `send` is only
 /// for an empty body, and no template sets `text/html` by hand.
+///
+/// Invariant: TPL-2.
 #[test]
 fn every_body_goes_through_html_or_text() {
     for (name, dir) in templates() {
@@ -184,6 +190,8 @@ fn storage_is_per_caller_and_says_why() {
 
 /// Nothing granted: no outbound network access and no secrets. A deployed app
 /// can use neither today, and a template that needs one does not work deployed.
+///
+/// Invariant: TPL-3.
 #[test]
 fn no_template_is_granted_egress_or_secrets() {
     for (name, dir) in templates() {

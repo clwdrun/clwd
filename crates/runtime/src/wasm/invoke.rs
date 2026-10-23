@@ -256,6 +256,8 @@ mod tests {
 
     /// A limiter denial arrives as a trap carrying the typed error, so it must
     /// be recognised before the fallback claims it.
+    ///
+    /// Invariant: RT-6.
     #[test]
     fn a_memory_denial_maps_to_memory_limit_exceeded() {
         let error = wasmtime::Error::from(LimitExceeded::Memory {
@@ -274,6 +276,8 @@ mod tests {
     /// reaches the cap. This exercises everything from the limiter's decision
     /// to the code a caller sees, but not the wasm instruction that would
     /// trigger it.
+    ///
+    /// Invariant: RT-7.
     #[test]
     fn the_table_cap_maps_to_table_limit_exceeded() {
         use crate::wasm::limits::{BudgetLimiter, MAX_TABLE_ELEMENTS};
@@ -302,6 +306,8 @@ mod tests {
     /// CPU budget wherever it fires, so instantiation and the handler map to the
     /// same code; the caller's wall-clock deadlines are separate codes raised in
     /// `mod.rs`.
+    ///
+    /// Invariant: RT-5.
     #[test]
     fn an_epoch_interrupt_maps_to_cpu_budget_exceeded() {
         for during in ["instantiating", "guest"] {

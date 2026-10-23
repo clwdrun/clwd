@@ -64,6 +64,12 @@ mod served {
     use crate::commands::local;
     use crate::error::CliError;
 
+    /// Where the dev server listens: loopback only. It serves a mock caller
+    /// that anyone who can connect is treated as, so it is never exposed.
+    fn listen_addr(port: u16) -> SocketAddr {
+        SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port))
+    }
+
     /// How long the graceful shutdown waits for in-flight requests before it
     /// stops regardless. A dev server must stop *fast* on Ctrl-C, not wait out a
     /// grace window (the `platform#5` pingora lesson).
@@ -332,8 +338,7 @@ mod served {
             p.finish();
         }
 
-        let addr = SocketAddr::from(([127, 0, 0, 1], port));
-        let listener = tokio::net::TcpListener::bind(addr)
+        let listener = tokio::net::TcpListener::bind(listen_addr(port))
             .await
             .map_err(|e| CliError::Config {
                 what: format!(
@@ -400,8 +405,23 @@ mod served {
     mod tests {
         use super::*;
 
+        /// The dev server serves a mock caller, so it must not be reachable
+        /// from another machine: it listens on loopback, whatever the port.
+        ///
+        /// Invariant: DEV-1.
+        #[test]
+        fn the_dev_server_listens_on_loopback_only() {
+            for port in [0, 8787, u16::MAX] {
+                let addr = listen_addr(port);
+                assert!(addr.ip().is_loopback(), "{addr}");
+                assert_eq!(addr.port(), port);
+            }
+        }
+
         /// Output parity: a line the dev server prints is exactly the line
         /// `clwd logs` prints for the same app output, escaping included.
+        ///
+        /// Invariant: CLI-4.
         #[test]
         fn the_dev_server_prints_app_lines_as_clwd_logs_does() {
             let hostile = "\u{1b}[2Jsaving\r";
