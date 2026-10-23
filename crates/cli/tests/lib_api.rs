@@ -123,7 +123,7 @@ fn every_command_reports_either_a_value_or_a_stable_code() {
     // Each arm calls a distinct command, so a command added to the surface
     // without a `Result<_, CliError>` signature will not compile here.
     //
-    // `run`, `build`, `secrets`, `init`, `publish` and `dev` are no longer in this list: they
+    // `run`, `build`, `secrets`, `init`, `publish`, `dev` and `logs` are no longer in this list: they
     // have bodies, so they do not return `cli.not_implemented` and asserting that they do
     // would be asserting they stay unbuilt. Each is covered by its own
     // `*_is_callable_in_process_and_returns_a_typed_error` above, and end to end
@@ -131,13 +131,7 @@ fn every_command_reports_either_a_value_or_a_stable_code() {
     // leaves this list the same way.
     // Owned rather than borrowed: `code()` borrows the error, and each error
     // here is a temporary, so holding a `&str` across the array would outlive it.
-    let codes: [String; 2] = [
-        commands::logs::execute(false, None)
-            .unwrap_err()
-            .code()
-            .to_owned(),
-        commands::mcp::execute(None).unwrap_err().code().to_owned(),
-    ];
+    let codes: [String; 1] = [commands::mcp::execute(None).unwrap_err().code().to_owned()];
     assert!(
         codes.iter().all(|code| code == "cli.not_implemented"),
         "got {codes:?}"

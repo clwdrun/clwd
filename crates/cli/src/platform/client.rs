@@ -222,6 +222,103 @@ pub async fn create_app(
     }
 }
 
+/// An app, as looking it up by its label returns it.
+#[derive(Debug, Clone, Deserialize)]
+#[non_exhaustive]
+pub struct AppSummary {
+    pub id: String,
+    pub host_label: String,
+    pub url: String,
+}
+
+/// The app in `org` with this host label.
+pub async fn app_by_label(
+    url: &PlatformUrl,
+    org: &OrgId,
+    token: &Token,
+    host_label: &str,
+) -> Result<AppSummary, CliError> {
+    let endpoint = url.app_by_label_endpoint(org, host_label)?;
+    get_json(reqwest::Client::new().get(endpoint), token).await
+}
+
+/// One page of an app's log, as the platform returns it.
+#[derive(Debug, Clone, Deserialize)]
+#[non_exhaustive]
+pub struct LogPage {
+    pub lines: Vec<crate::commands::logs::LogLine>,
+    pub cursor: Option<crate::commands::logs::LogCursor>,
+}
+
+/// What to read: after a cursor, one request's lines, recent lines only, and
+/// how long to wait for a line when there is none.
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct LogQuery {
+    pub after: Option<crate::commands::logs::LogCursor>,
+    pub request_id: Option<String>,
+    pub since_secs: Option<u64>,
+    pub wait_secs: u64,
+}
+
+/// Read a page of `app`'s log.
+pub async fn read_logs(
+    client: &reqwest::Client,
+    url: &PlatformUrl,
+    app: &AppId,
+    token: &Token,
+    query: &LogQuery,
+) -> Result<LogPage, CliError> {
+    let mut endpoint = url.logs_endpoint(app)?;
+    {
+        let mut pairs = endpoint.query_pairs_mut();
+        if let Some(after) = query.after {
+            pairs.append_pair("after", &after.seq().to_string());
+        }
+        if let Some(id) = &query.request_id {
+            pairs.append_pair("request_id", id);
+        }
+        if let Some(since) = query.since_secs {
+            pairs.append_pair("since", &since.to_string());
+        }
+        if query.wait_secs > 0 {
+            pairs.append_pair("wait", &query.wait_secs.to_string());
+        }
+    }
+    // `query_pairs_mut` leaves a bare `?` when nothing was added.
+    if endpoint.query() == Some("") {
+        endpoint.set_query(None);
+    }
+    get_json(client.get(endpoint), token).await
+}
+
+async fn get_json<T: serde::de::DeserializeOwned>(
+    request: reqwest::RequestBuilder,
+    token: &Token,
+) -> Result<T, CliError> {
+    let response = request
+        .bearer_auth(token.as_bearer())
+        .send()
+        .await
+        .map_err(pure_network)?;
+    if response.status().is_success() {
+        response.json::<T>().await.map_err(|e| {
+            // A body cut off mid-read is the network's doing, not a broken
+            // contract: report it as one, so a follower retries.
+            if e.is_body() {
+                pure_network(e)
+            } else {
+                CliError::Internal {
+                    source: anyhow::Error::new(e)
+                        .context("the platform's success response was not the expected shape"),
+                }
+            }
+        })
+    } else {
+        Err(platform_error(response).await)
+    }
+}
+
 async fn platform_error(response: reqwest::Response) -> CliError {
     let status = response.status();
     let retry_after = response

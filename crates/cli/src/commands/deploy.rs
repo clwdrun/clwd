@@ -140,7 +140,7 @@ pub fn execute(
 }
 
 /// The host label `clwd.toml` declares, checked for syntax.
-fn host_label(project: &Path) -> Result<String, CliError> {
+pub fn host_label(project: &Path) -> Result<String, CliError> {
     let path = project.join(manifest::FILENAME);
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,

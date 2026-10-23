@@ -24,7 +24,10 @@ use crate::secrets::value::SecretValue;
 pub mod client;
 pub mod config;
 
-pub use client::{Certificate, CreatedApp, Published, create_app, publish};
+pub use client::{
+    AppSummary, Certificate, CreatedApp, LogPage, LogQuery, Published, app_by_label, create_app,
+    publish, read_logs,
+};
 
 /// A platform's base URL, validated to be http(s).
 ///
@@ -62,6 +65,20 @@ impl PlatformUrl {
     /// `POST {base}/v1/orgs/{org}/apps` — create an app in `org`.
     pub fn apps_endpoint(&self, org: &OrgId) -> Result<reqwest::Url, CliError> {
         self.endpoint(&["v1", "orgs", org.as_str(), "apps"])
+    }
+
+    /// `GET {base}/v1/orgs/{org}/apps/{host_label}` — one app, by its label.
+    pub fn app_by_label_endpoint(
+        &self,
+        org: &OrgId,
+        host_label: &str,
+    ) -> Result<reqwest::Url, CliError> {
+        self.endpoint(&["v1", "orgs", org.as_str(), "apps", host_label])
+    }
+
+    /// `GET {base}/v1/apps/{app_id}/logs` — an app's log.
+    pub fn logs_endpoint(&self, app: &AppId) -> Result<reqwest::Url, CliError> {
+        self.endpoint(&["v1", "apps", app.as_str(), "logs"])
     }
 
     fn endpoint(&self, path: &[&str]) -> Result<reqwest::Url, CliError> {
