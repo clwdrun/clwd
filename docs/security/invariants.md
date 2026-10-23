@@ -584,10 +584,11 @@ Enforced by `just secrets` and the CI `secrets` step.
 
 ### SC-4 · CI tools are verified before they run
 
-gitleaks and cargo-deny are downloaded at pinned versions and their sha256
-is checked before they are unpacked.
+gitleaks, cargo-deny and cargo-nextest are downloaded at pinned versions and
+their sha256 is checked before they are unpacked.
 
-Enforced by the CI `install gitleaks` and `install cargo-deny` steps.
+Enforced by the CI `install gitleaks`, `install cargo-deny` and
+`install cargo-nextest` steps.
 
 ### SC-5 · A tag is accepted only from green `main`
 

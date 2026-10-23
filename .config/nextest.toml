@@ -1,0 +1,36 @@
+# Every test runs under nextest (`just test`, CI's test steps), and every test
+# has a time limit: one that runs past it is killed, the run fails, and the
+# report names it. A hang costs five minutes, not the six-hour job limit.
+#
+# The slowest test takes about 90 s on a developer machine (a cold build of the
+# scaffolded app in `deploy` and `init`); 300 s leaves room for a slower CI
+# runner without letting a stuck test run on.
+[profile.default]
+slow-timeout = { period = "60s", terminate-after = 5 }
+
+# nextest runs each test in its own process. The `mcp` and `deploy` binaries
+# share one scaffolded project per binary, held by an in-process lock that only
+# serializes tests within one process; run in parallel processes they wipe and
+# rebuild each other's project. One at a time, as under `cargo test`.
+#
+# The template tests in `commands::dev::served::templates` build the real
+# `templates/hello` and `templates/notes`, once per process. In parallel
+# processes, one reads `app.stripped.wasm` while another's `wasm-tools strip`
+# has truncated it to rewrite it, and spawns an empty component. One at a
+# time, as under `cargo test`.
+[test-groups]
+mcp-project = { max-threads = 1 }
+deploy-project = { max-threads = 1 }
+template-builds = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(clwd-cli) & binary(mcp)'
+test-group = 'mcp-project'
+
+[[profile.default.overrides]]
+filter = 'package(clwd-cli) & binary(deploy)'
+test-group = 'deploy-project'
+
+[[profile.default.overrides]]
+filter = 'package(clwd-cli) & kind(lib) & test(/^commands::dev::served::templates::/)'
+test-group = 'template-builds'

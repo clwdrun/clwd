@@ -11,10 +11,14 @@ cargo build --workspace              # cli, sdk, runtime — no backends enabled
 cargo build -p clwd-runtime --features wasm
 cargo build -p clwd-runtime --features microvm
 cargo build -p clwd-agent --target x86_64-unknown-linux-musl
-cargo test --workspace
+cargo nextest run --workspace        # every test, each under the limit in .config/nextest.toml
+cargo test --workspace --doc         # doc tests, which nextest cannot run
 cargo clippy --workspace --all-features -- -D warnings
 cargo fmt --all
 ```
+
+Tests run under [cargo-nextest](https://nexte.st) (`cargo install cargo-nextest --locked`,
+or the version CI pins in `.github/workflows/ci.yml`).
 
 `clwd-agent` is excluded from `default-members` — it is musl-only and must
 be built with `-p` and an explicit target. Do not add it back to the default set.
