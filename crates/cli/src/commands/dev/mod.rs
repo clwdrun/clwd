@@ -72,7 +72,7 @@ mod served {
 
     /// How long the graceful shutdown waits for in-flight requests before it
     /// stops regardless. A dev server must stop *fast* on Ctrl-C, not wait out a
-    /// grace window (the `platform#5` pingora lesson).
+    /// production-sized grace window.
     const SHUTDOWN_GRACE: Duration = Duration::from_millis(300);
 
     /// One running version of the app: a sandbox and the handle spawned against

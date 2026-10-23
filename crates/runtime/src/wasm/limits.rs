@@ -25,7 +25,8 @@
 //!
 //! - **It is per-`Store`, not per-host.** A thousand concurrent guests each
 //!   inside `memory_mb` can still exhaust the machine. Per-host admission
-//!   control is `platform#25` and nothing here substitutes for it.
+//!   control belongs to the embedding host, and nothing here substitutes for
+//!   it.
 //! - **It does not bound host memory the runtime allocates for a guest** — the
 //!   resource table, buffered request and response bodies. Those are host
 //!   allocations attributed to no `Store` limit. Log capture is bounded

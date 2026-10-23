@@ -14,8 +14,8 @@ use crate::error::CliError;
 /// The version resource the platform returns on a successful publish.
 ///
 /// The same body is sent for a freshly created version and one that already
-/// existed; `platform#7` puts created-vs-existed in the status code and refused
-/// a `created` field, so this type carries no such field either — [`Published`]
+/// existed; the platform API puts created-vs-existed in the status code and
+/// has no `created` field, so this type carries no such field either — [`Published`]
 /// derives it from the status, once, at the boundary.
 #[derive(Debug, Deserialize)]
 struct VersionResource {
@@ -364,7 +364,7 @@ async fn platform_error(response: reqwest::Response) -> CliError {
                 ),
             }
         }
-        // `platform#53` guarantees the envelope on every 4xx/5xx, so a body that
+        // The platform API sends the envelope on every 4xx/5xx, so a body that
         // is not one is a broken contract, not a normal outcome — an internal
         // error naming the status, rather than a delegated code we cannot read.
         Err(e) => CliError::Internal {

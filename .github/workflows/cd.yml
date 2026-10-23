@@ -5,12 +5,12 @@ name: cd
 #   clwd-sdk-v*   -> publish clwd-sdk to crates.io
 #   dispatch      -> cut a GitHub Release, deliberately
 #
-# The SDK ships on its own cadence and is consumed by the private platform
-# repo via a tag-pinned git dependency, so a breaking SDK change needs a
+# The SDK ships on its own cadence and is consumed downstream through
+# tag-pinned git dependencies, so a breaking SDK change needs a
 # version bump and a tag — not just a merge to main.
 #
 # **Pushing a `v*` tag does NOT cut a Release.** Most `v*` tags are seam pins
-# that exist so `platform` has a ref to depend on, and a tag is a ref while a
+# that exist so downstream code has a ref to depend on, and a tag is a ref while a
 # Release is an announcement. Cutting one on every pin put `v0.0.1` at the top
 # of the Releases list marked "Latest", with auto-generated notes — invisible
 # while the repo is private and retroactively public the moment it is not.

@@ -33,8 +33,8 @@ use a Linux VM.
 
 "Agent" is overloaded in this repo. `clwd-agent` is the in-guest init process —
 unrelated to the AI agents that generate app code (`templates/`, `crates/sdk/wit/`, the
-untrusted-code assumption below) and unrelated to the platform repo's "Agent
-Surface" phase. When either sense is not obvious from context, say which.
+untrusted-code assumption below). When the sense is not obvious from context, say
+which.
 
 ## Architectural rules
 
@@ -55,9 +55,8 @@ then reference them as `foo = { workspace = true }` in crate manifests. Do not
 pin versions per-crate.
 
 **This workspace must build standalone from a clean clone.** Never add a path or
-git dependency on anything in the `platform` repo. The public/private split exists
-to keep private types from leaking into public crates, and a stray path dependency
-defeats it silently — it works locally and breaks CI. CI enforces this with
+git dependency on another repository. Downstream code depends on this workspace,
+never the reverse, and a stray path dependency defeats that silently — it works locally and breaks CI. CI enforces this with
 `cargo-deny` plus a clean-clone build job.
 
 ## Backend notes
@@ -77,13 +76,13 @@ microvm code as if snapshots already exist.
 `templates/` and `crates/sdk/wit/` are read by agents generating apps, not just by humans.
 Treat changes there as product changes: breaking a template breaks generated code
 in the field. `clwd-sdk` publishes to crates.io on its own version cadence and is
-consumed by `platform` via a tag-pinned git dependency, so a breaking SDK change
+consumed downstream through tag-pinned git dependencies, so a breaking SDK change
 needs a version bump and a tag, not just a merge.
 
 ### Seam pins are tags, never Releases
 
-A tag is a ref. A Release is an announcement. The pins `platform` consumes are
-refs, so they are annotated tags and nothing else.
+A tag is a ref. A Release is an announcement. The pins downstream code consumes
+are refs, so they are annotated tags and nothing else.
 
 `gh release create` is reserved for MVP and after. This matters more than it
 sounds: the repository is private today, so nobody outside the org sees a
@@ -134,9 +133,6 @@ Two habits that catch this cheaply:
   assertions perfectly.
 - **Ask what would have to be true for this to pass while the feature is
   broken.** If the answer is short, the check is aimed at the wrong thing.
-
-`clwdrun/platform`'s `docs/development.md` carries a shorter version of this
-note; this is the fuller one and the two should converge here.
 
 ## Untrusted code assumption
 

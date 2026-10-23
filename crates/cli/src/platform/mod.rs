@@ -272,7 +272,7 @@ impl fmt::Debug for Token {
 
 /// A failure a platform decided, carrying the shared error envelope verbatim.
 ///
-/// `platform#53` guarantees every 4xx/5xx response is
+/// The platform API sends every 4xx/5xx response as
 /// `{code, message, hint, retryable}`. The CLI surfaces that `code` unchanged —
 /// wrapping `identity.forbidden` in `cli.internal` would tell a caller only that
 /// something went wrong, when the platform already said exactly what. This type
