@@ -8,6 +8,7 @@
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::Mutex;
 use std::task::{Context, Poll};
@@ -26,7 +27,7 @@ const SINK_CAPACITY: usize = 256 * 1024;
 /// Lines retained per instance for a subscriber that attaches late.
 const HISTORY_LINES: usize = 1024;
 /// Depth of one subscriber's channel. A subscriber that stops reading loses
-/// lines; it never slows the guest down.
+/// lines, and is told how many; it never slows the guest down.
 const SUBSCRIBER_DEPTH: usize = 256;
 
 #[derive(Default)]
@@ -181,18 +182,29 @@ pub(super) struct InstanceLogs {
 #[derive(Default)]
 struct LogState {
     history: VecDeque<LogLine>,
-    subscribers: Vec<mpsc::Sender<LogLine>>,
+    subscribers: Vec<Subscriber>,
+}
+
+/// One subscriber, as the publishing side holds it: its channel, and how many
+/// lines it could not take. The count is shared with its [`LogSubscription`],
+/// which reports it once it has read everything buffered, so a reader that
+/// fell behind learns how far, rather than reading a log with silent gaps.
+struct Subscriber {
+    tx: mpsc::Sender<LogLine>,
+    lagged: Arc<AtomicU64>,
 }
 
 impl InstanceLogs {
     /// Record lines and fan them out. A subscriber whose channel is full loses
-    /// lines; the guest is never slowed down by a slow reader.
+    /// lines, counted; the guest is never slowed down by a slow reader.
     pub(super) fn publish(&self, lines: Vec<LogLine>) {
         let mut state = self.inner.lock();
         for line in lines {
-            state.subscribers.retain(|tx| !tx.is_closed());
-            for tx in &state.subscribers {
-                let _ = tx.try_send(line.clone());
+            state.subscribers.retain(|s| !s.tx.is_closed());
+            for subscriber in &state.subscribers {
+                if subscriber.tx.try_send(line.clone()).is_err() {
+                    subscriber.lagged.fetch_add(1, Ordering::Relaxed);
+                }
             }
             state.history.push_back(line);
             while state.history.len() > HISTORY_LINES {
@@ -204,25 +216,48 @@ impl InstanceLogs {
     /// A stream of what has been logged so far, then whatever follows.
     pub(super) fn subscribe(&self) -> LogSubscription {
         let (tx, rx) = mpsc::channel(SUBSCRIBER_DEPTH);
+        let lagged = Arc::new(AtomicU64::new(0));
         let mut state = self.inner.lock();
-        for line in state.history.iter().take(SUBSCRIBER_DEPTH) {
-            let _ = tx.try_send(line.clone());
+        for line in &state.history {
+            if tx.try_send(line.clone()).is_err() {
+                lagged.fetch_add(1, Ordering::Relaxed);
+            }
         }
-        state.subscribers.push(tx);
-        LogSubscription { rx }
+        state.subscribers.push(Subscriber {
+            tx,
+            lagged: Arc::clone(&lagged),
+        });
+        LogSubscription { rx, lagged }
     }
 }
 
 /// One subscriber's view. Held by [`crate::logs::LogStream`].
 pub(super) struct LogSubscription {
     rx: mpsc::Receiver<LogLine>,
+    lagged: Arc<AtomicU64>,
+}
+
+/// The line a subscriber reads in place of the `n` it fell behind by.
+fn lagged_line(n: u64) -> LogLine {
+    LogLine::new(
+        LogLevel::Info,
+        format!("[clwd] {n} log lines dropped: the reader fell behind"),
+    )
 }
 
 impl futures_core::Stream for LogSubscription {
     type Item = Result<LogLine, Error>;
 
+    /// Buffered lines first; then, if any were lost while the buffer was
+    /// full, one line saying how many, before waiting for more.
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.rx.poll_recv(cx).map(|line| line.map(Ok))
+        match self.rx.poll_recv(cx) {
+            Poll::Ready(Some(line)) => Poll::Ready(Some(Ok(line))),
+            other => match self.lagged.swap(0, Ordering::Relaxed) {
+                0 => other.map(|line| line.map(Ok)),
+                n => Poll::Ready(Some(Ok(lagged_line(n)))),
+            },
+        }
     }
 }
 
@@ -275,5 +310,65 @@ mod tests {
         let next = sink.drain(None);
         assert_eq!(next.len(), 1);
         assert_eq!(next[0].message, "next");
+    }
+
+    fn lines(n: usize) -> Vec<LogLine> {
+        (0..n)
+            .map(|i| LogLine::new(LogLevel::Info, format!("line {i}")))
+            .collect()
+    }
+
+    /// Read everything a subscription has ready, without waiting.
+    fn ready(subscription: &mut LogSubscription) -> Vec<String> {
+        use futures_core::Stream as _;
+        let mut cx = Context::from_waker(std::task::Waker::noop());
+        let mut out = Vec::new();
+        while let Poll::Ready(Some(Ok(line))) = Pin::new(&mut *subscription).poll_next(&mut cx) {
+            out.push(line.message);
+        }
+        out
+    }
+
+    /// A reader that falls behind gets every line its buffer held, then one
+    /// line saying exactly how many it lost: never a silent gap.
+    #[test]
+    fn a_reader_that_falls_behind_is_told_how_many_lines_it_lost() {
+        let logs = InstanceLogs::default();
+        let mut subscription = logs.subscribe();
+        logs.publish(lines(SUBSCRIBER_DEPTH + 40));
+
+        let read = ready(&mut subscription);
+        assert_eq!(read.len(), SUBSCRIBER_DEPTH + 1);
+        assert_eq!(read[0], "line 0");
+        assert_eq!(
+            read[SUBSCRIBER_DEPTH],
+            "[clwd] 40 log lines dropped: the reader fell behind"
+        );
+
+        // Counted once: the next lines arrive with no repeat of the marker.
+        logs.publish(lines(2));
+        assert_eq!(ready(&mut subscription), ["line 0", "line 1"]);
+    }
+
+    /// A late subscriber is told about the history it could not be given.
+    #[test]
+    fn history_past_a_subscribers_depth_is_counted() {
+        let logs = InstanceLogs::default();
+        logs.publish(lines(SUBSCRIBER_DEPTH + 10));
+        let mut subscription = logs.subscribe();
+        let read = ready(&mut subscription);
+        assert_eq!(read.len(), SUBSCRIBER_DEPTH + 1);
+        assert_eq!(
+            read.last().map(String::as_str),
+            Some("[clwd] 10 log lines dropped: the reader fell behind")
+        );
+    }
+
+    #[test]
+    fn a_reader_that_keeps_up_sees_no_marker() {
+        let logs = InstanceLogs::default();
+        let mut subscription = logs.subscribe();
+        logs.publish(lines(10));
+        assert_eq!(ready(&mut subscription).len(), 10);
     }
 }
