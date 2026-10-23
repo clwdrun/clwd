@@ -1,5 +1,5 @@
 [toolchain]
-channel = "1.97.1" # set to current stable; pin exact, not "stable"
+channel = "1.99.1" # set to current stable; pin exact, not "stable"
 profile = "minimal"
 components = ["rustfmt", "clippy", "rust-src"]
 targets = [
