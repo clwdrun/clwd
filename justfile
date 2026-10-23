@@ -41,7 +41,7 @@ hooks:
 # caught by the `docs_match_the_code` test, which `just test` already runs; this
 # is the only way to make the change.
 error-table:
-    UPDATE_ERROR_TABLE=1 cargo test -p clwd-cli --test error_table
+    UPDATE_ERROR_TABLE=1 cargo nextest run -p clwd-cli --test error_table
     @echo "ok: docs/error-codes.md regenerated — commit it with the code change"
 
 fmt:
@@ -54,20 +54,21 @@ clippy:
     cargo clippy --workspace --all-features -- -D warnings
 
 test:
-    cargo test --workspace
+    cargo nextest run --workspace
+    timeout 900 cargo test --workspace --doc
 
-# The default build never compiles the wasm backend, so `cargo test --workspace`
+# The default build never compiles the wasm backend, so the workspace test run
 # does not exercise it. A gate that does not compile the code it gates is worse
 # than no gate.
 test-wasm:
-    cargo test -p clwd-runtime --features wasm
+    cargo nextest run -p clwd-runtime --features wasm
 
 # The backend conformance suite is behind its own non-default `conformance`
 # feature and also needs `wasm` for the only arm that exists. Neither
-# `cargo test --workspace` nor `test-wasm` reaches it. Runs in CI's `backends`
+# the workspace test run nor `test-wasm` reaches it. Runs in CI's `backends`
 # job alongside `test-wasm`, not the `gate` job (which builds no backend).
 test-conformance:
-    cargo test -p clwd-runtime --features conformance,wasm --test conformance
+    cargo nextest run -p clwd-runtime --features conformance,wasm --test conformance
 
 # Invariant: SC-1.
 deny:
@@ -171,10 +172,10 @@ platform-client:
     echo "ok: one HTTP client constructor, PlatformUrl::client"
 
 # The panic test needs the test-only tool, so it is its own target with
-# `mcp-test-panic` as a required feature; `cargo test --workspace` does not
+# `mcp-test-panic` as a required feature; the workspace test run does not
 # build it, and this does.
 mcp-panic:
-    cargo test -p clwd-cli --features mcp-test-panic --test mcp_panic
+    cargo nextest run -p clwd-cli --features mcp-test-panic --test mcp_panic
 
 # The panicking tool must never ship. Checked in the release binary itself, with
 # a positive control: a real tool's name is found, so the grep can see names.

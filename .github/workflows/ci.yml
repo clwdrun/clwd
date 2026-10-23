@@ -27,6 +27,11 @@ env:
   # release's own .sha256 file and confirmed against the downloaded archive.
   CARGO_DENY_VERSION: 0.20.2
   CARGO_DENY_SHA256: 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+  # Same rule, one digest per archive:
+  # cargo-nextest-${NEXTEST_VERSION}-{x86_64-unknown-linux-musl,universal-apple-darwin}.tar.gz.
+  NEXTEST_VERSION: 0.9.143
+  NEXTEST_SHA256_LINUX: 6d891c18105ec2d33f6e441a4f92b7ccab47ba263e22055c8bb66884243f3389
+  NEXTEST_SHA256_MACOS: 4830d430411148d17602a75cc880bfb4dc8dac153dea59a48a2ef4cc93577f07
 
 jobs:
   # Mirrors `just check`. If these two drift, the gate is a lie.
@@ -108,8 +113,33 @@ jobs:
       - name: clippy
         run: cargo clippy --workspace --all-features -- -D warnings
 
+      # Every test runs under nextest, which ends a test that passes the limit in
+      # .config/nextest.toml and names it. A verified binary, not
+      # `cargo install`, for the same reasons as cargo-deny below.
+      # Invariant: SC-4.
+      - name: install cargo-nextest
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            Linux) target=x86_64-unknown-linux-musl sha=$NEXTEST_SHA256_LINUX ;;
+            macOS) target=universal-apple-darwin sha=$NEXTEST_SHA256_MACOS ;;
+          esac
+          archive="cargo-nextest-${NEXTEST_VERSION}-${target}.tar.gz"
+          curl -fsSL --retry 3 -o "$archive" \
+            "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${NEXTEST_VERSION}/${archive}"
+          echo "${sha}  ${archive}" | shasum -a 256 --check --strict
+          tar -xzf "$archive" cargo-nextest
+          sudo install -m 0755 cargo-nextest /usr/local/bin/cargo-nextest
+          rm -f "$archive" cargo-nextest
+          cargo nextest --version
+
       - name: test
-        run: cargo test --workspace
+        run: cargo nextest run --workspace
+
+      # nextest cannot run doc tests, so they keep `cargo test`, with a
+      # wall-clock limit on the step instead of one per test.
+      - name: doc tests
+        run: timeout 900 cargo test --workspace --doc
 
       # The library half of clwd-cli must stay silent. `clwd mcp serve` (#32)
       # calls these functions in-process and emits nothing on stdout but
@@ -248,7 +278,7 @@ jobs:
 
       # Mirrors `just mcp-panic`: the panic test needs the test-only tool.
       - name: mcp panic test
-        run: cargo test -p clwd-cli --features mcp-test-panic --test mcp_panic
+        run: cargo nextest run -p clwd-cli --features mcp-test-panic --test mcp_panic
 
       # Mirrors `just mcp-release-bare`: the panicking tool never ships.
       # Invariant: MCP-6.
@@ -344,7 +374,26 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo test -p clwd-bundle
+      # Every test runs under nextest, which ends a test that passes the limit in
+      # .config/nextest.toml and names it. A verified binary, not
+      # `cargo install`, for the same reasons as cargo-deny below.
+      # Invariant: SC-4.
+      - name: install cargo-nextest
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            Linux) target=x86_64-unknown-linux-musl sha=$NEXTEST_SHA256_LINUX ;;
+            macOS) target=universal-apple-darwin sha=$NEXTEST_SHA256_MACOS ;;
+          esac
+          archive="cargo-nextest-${NEXTEST_VERSION}-${target}.tar.gz"
+          curl -fsSL --retry 3 -o "$archive" \
+            "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${NEXTEST_VERSION}/${archive}"
+          echo "${sha}  ${archive}" | shasum -a 256 --check --strict
+          tar -xzf "$archive" cargo-nextest
+          sudo install -m 0755 cargo-nextest /usr/local/bin/cargo-nextest
+          rm -f "$archive" cargo-nextest
+          cargo nextest --version
+      - run: cargo nextest run -p clwd-bundle
 
       # The library reads and writes bytes. If a runtime backend ever reaches
       # it, the platform builder acquires one too, across the repository seam.
@@ -376,11 +425,32 @@ jobs:
       # microvm needs Linux with KVM at runtime; compiling it does not.
       - run: cargo build -p clwd-runtime --features ${{ matrix.feature }}
 
+      # Every test runs under nextest, which ends a test that passes the limit in
+      # .config/nextest.toml and names it. A verified binary, not
+      # `cargo install`, for the same reasons as cargo-deny below.
+      # Invariant: SC-4.
+      - name: install cargo-nextest
+        if: matrix.feature == 'wasm'
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            Linux) target=x86_64-unknown-linux-musl sha=$NEXTEST_SHA256_LINUX ;;
+            macOS) target=universal-apple-darwin sha=$NEXTEST_SHA256_MACOS ;;
+          esac
+          archive="cargo-nextest-${NEXTEST_VERSION}-${target}.tar.gz"
+          curl -fsSL --retry 3 -o "$archive" \
+            "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${NEXTEST_VERSION}/${archive}"
+          echo "${sha}  ${archive}" | shasum -a 256 --check --strict
+          tar -xzf "$archive" cargo-nextest
+          sudo install -m 0755 cargo-nextest /usr/local/bin/cargo-nextest
+          rm -f "$archive" cargo-nextest
+          cargo nextest --version
+
       # The wasm backend has tests; the default build never compiles them, so
-      # `cargo test --workspace` in the gate job does not reach them.
+      # the workspace run in the gate job does not reach them.
       - name: test the wasm backend
         if: matrix.feature == 'wasm'
-        run: cargo test -p clwd-runtime --features wasm
+        run: cargo nextest run -p clwd-runtime --features wasm
 
       # The backend conformance suite sits behind its own `conformance` feature
       # on top of `wasm`; the step above enables only `wasm`, so it never runs
@@ -388,7 +458,7 @@ jobs:
       # microVM arm's UNPROVEN line is meant to be a visible reminder against.
       - name: conformance suite
         if: matrix.feature == 'wasm'
-        run: cargo test -p clwd-runtime --features conformance,wasm --test conformance
+        run: cargo nextest run -p clwd-runtime --features conformance,wasm --test conformance
 
   guest:
     runs-on: ubuntu-latest
