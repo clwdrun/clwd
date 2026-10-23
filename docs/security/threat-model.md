@@ -95,7 +95,7 @@ wasmtime inside the host process.
 | Another local account reads the token | Environment or owner-only file (CLI-1) |
 | A deploy claims the wrong host label | Label only from `clwd.toml`, checked before building; MCP requires confirmation (CLI-8) |
 | Two deploys of one project interleave | Per-project lock (CLI-7) |
-| The token is sent over plain HTTP | **Not mitigated**: see [#102](https://github.com/clwdrun/clwd/issues/102) under Known limitations |
+| The token is sent over plain HTTP, or a redirect moves it elsewhere | https except to loopback; no redirect is followed (CLI-11) |
 
 ### 4. CLI ↔ cargo and build scripts
 
@@ -183,50 +183,48 @@ identity per request instead; none exists today.
 
 Each is true today. Where it should change, an issue tracks it.
 
-1. **The platform URL accepts `http://`,** so a mistyped URL sends the token in
-   clear text. [#102](https://github.com/clwdrun/clwd/issues/102) (P1).
-2. **Build scripts and proc macros run with the user's permissions.** `build`
+1. **Build scripts and proc macros run with the user's permissions.** `build`
    and `deploy` run cargo, which runs project code as ordinary code. The MCP
    workspace root confines where the tools act, not what that code does.
    Inherent to building Rust; not tracked.
-3. **cargo reads `.cargo/config.toml` from the project's parent directories,**
+2. **cargo reads `.cargo/config.toml` from the project's parent directories,**
    including above the MCP workspace root. Inherent to cargo; not tracked.
-4. **The MCP root check has a timing gap:** a symlink swapped in between the
+3. **The MCP root check has a timing gap:** a symlink swapped in between the
    check and the use is followed. [#105](https://github.com/clwdrun/clwd/issues/105).
-5. **Cancelling a build on Windows kills only cargo,** not the compiler
+4. **Cancelling a build on Windows kills only cargo,** not the compiler
    processes it started. [#106](https://github.com/clwdrun/clwd/issues/106).
-6. **A runtime escape lands in the host process,** with whatever that process
+5. **A runtime escape lands in the host process,** with whatever that process
    can reach. A deployment that runs more than one tenant in one process must
    isolate tenants itself. The planned second layer (microVM, jailer, seccomp,
    landlock) is not built. [#21](https://github.com/clwdrun/clwd/issues/21), [#22](https://github.com/clwdrun/clwd/issues/22), [#23](https://github.com/clwdrun/clwd/issues/23).
-7. **`cpu_ms` is charged in wall time while an invocation is active,**
+6. **`cpu_ms` is charged in wall time while an invocation is active,**
    including time spent in host calls, and checked at the next point inside
    guest code. It errs toward stopping a guest early. [#107](https://github.com/clwdrun/clwd/issues/107).
-8. **Limits are per instance, not per host.** Many guests each within budget
+7. **Limits are per instance, not per host.** Many guests each within budget
    can still exhaust a machine, and host-side allocations (the buffered request
    body, the resource table) are outside the per-instance limits. [#48](https://github.com/clwdrun/clwd/issues/48).
-9. **The runtime does not cap the request body;** the embedding host must. [#104](https://github.com/clwdrun/clwd/issues/104).
-10. **Egress is checked by hostname, not address.** DNS rebinding and allowed
+8. **The runtime does not cap the request body;** the embedding host must. [#104](https://github.com/clwdrun/clwd/issues/104).
+9. **Egress is checked by hostname, not address.** DNS rebinding and allowed
     names that resolve to internal addresses are for the network edge to stop.
     Under `clwd dev` and `clwd run` there is no edge, so an allowed name that
     resolves to a local address is reachable. That runs the author's own code
     on the author's machine; not tracked.
-11. **`storage_namespaces` is on or off;** the namespace strings grant nothing
+10. **`storage_namespaces` is on or off;** the namespace strings grant nothing
     narrower than the whole store. [#108](https://github.com/clwdrun/clwd/issues/108).
-12. **The local secret store is plaintext,** protected by file permissions
+11. **The local secret store is plaintext,** protected by file permissions
     (CLI-5) against other accounts, not against the account that owns it. By
     design for a development machine; not tracked.
-13. **The runtime is tested only on x86-64 Linux.** Nothing prevents building
+12. **The runtime is tested only on x86-64 Linux.** Nothing prevents building
     it elsewhere; nothing tests it there. aarch64 is [#47](https://github.com/clwdrun/clwd/issues/47).
-14. **Decoding a bundle needs the whole bundle in memory,** and a member may be
+13. **Decoding a bundle needs the whole bundle in memory,** and a member may be
     up to 8 GiB, so a caller decoding untrusted bytes must cap their size
     first. [#74](https://github.com/clwdrun/clwd/issues/74).
-15. **Advisories are checked on every change and daily, not continuously.** A
+14. **Advisories are checked on every change and daily, not continuously.** A
     new advisory against an unchanged lockfile can go unseen for up to a day.
     Not tracked.
-16. **GitHub's own `actions/*` are pinned by tag,** not commit SHA, so the code
+15. **GitHub's own `actions/*` are pinned by tag,** not commit SHA, so the code
     those steps run can change without a commit here. [#103](https://github.com/clwdrun/clwd/issues/103).
-17. **Side channels are not addressed** beyond wasmtime's defaults. Not
+16. **Side channels are not addressed** beyond wasmtime's defaults. Not
     tracked.
 
 ## Not yet

@@ -29,28 +29,49 @@ pub use client::{
     publish, read_logs,
 };
 
-/// A platform's base URL, validated to be http(s).
+/// A platform's base URL: `https`, or plain `http` to a loopback address.
 ///
 /// Holds a parsed [`reqwest::Url`] so the route can be built without
 /// string-concatenating a path — see [`PlatformUrl::versions_endpoint`].
+///
+/// Every request to the platform carries the token, so the URL decides whether
+/// the token crosses a network in clear text. [`PlatformUrl::parse`] refuses
+/// that, and [`PlatformUrl::client`] is the one way to build a client for it,
+/// so no request can be redirected or downgraded off `https` either.
 #[derive(Debug, Clone)]
 pub struct PlatformUrl(reqwest::Url);
 
 impl PlatformUrl {
     /// Parse and validate a base URL.
     ///
-    /// The scheme must be `http` or `https`; anything else is a configuration
-    /// error rather than a request that fails later with a worse message.
+    /// The scheme must be `https`, or `http` with a loopback host: a platform
+    /// on this machine, which is what the tests and local development run.
+    /// Any other scheme is a configuration error rather than a request that
+    /// fails later with a worse message.
     pub fn parse(raw: &str) -> Result<Self, CliError> {
         let url = reqwest::Url::parse(raw).map_err(|e| CliError::Config {
             what: format!("{raw:?} is not a valid platform URL: {e}"),
         })?;
         match url.scheme() {
-            "http" | "https" => Ok(Self(url)),
+            "https" => Ok(Self(url)),
+            "http" if is_loopback(&url) => Ok(Self(url)),
+            "http" => Err(CliError::InsecurePlatformUrl {
+                url: url.to_string(),
+            }),
             other => Err(CliError::Config {
                 what: format!("the platform URL scheme {other:?} is not http or https"),
             }),
         }
+    }
+
+    /// A client for this platform. It never follows a redirect, because the
+    /// platform API never sends one: a redirect is reported, not obeyed, so a
+    /// response cannot move the token to another URL. For any URL that is not
+    /// loopback it also refuses to send a request over plain `http`.
+    pub fn client(&self) -> reqwest::ClientBuilder {
+        reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .https_only(!is_loopback(&self.0))
     }
 
     /// The versions endpoint for `app`: `{base}/v1/apps/{app_id}/versions`.
@@ -92,6 +113,22 @@ impl PlatformUrl {
             segments.pop_if_empty().extend(path);
         }
         Ok(url)
+    }
+}
+
+/// Whether `url`'s parsed host is loopback: an address in `127.0.0.0/8`,
+/// `::1`, or exactly the name `localhost`. Read from the parsed host, never
+/// the string, so `127.0.0.1.example.com` is a name like any other.
+/// The parsed host is canonical: an IPv4 address in any spelling the URL
+/// standard accepts is already dotted decimal, and an IPv6 one is bracketed.
+fn is_loopback(url: &reqwest::Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    match bare.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip.is_loopback(),
+        Err(_) => host == "localhost",
     }
 }
 
@@ -393,5 +430,68 @@ mod tests {
     fn a_non_http_scheme_is_refused() {
         let err = PlatformUrl::parse("ftp://example.com").expect_err("not http");
         assert_eq!(err.code(), "cli.config");
+    }
+
+    /// The token crosses the network only over https. Plain http is for a
+    /// platform on this machine, judged from the parsed host, so a name that
+    /// merely starts like a loopback address is a name.
+    ///
+    /// Invariant: CLI-11.
+    #[test]
+    fn plain_http_is_accepted_only_for_a_loopback_host() {
+        for remote in [
+            "http://example.com",
+            "http://10.0.0.1",
+            "http://0.0.0.0:8080",
+            "http://[::ffff:127.0.0.1]",
+            "http://127.0.0.1.example.com",
+            "http://localhost.example.com",
+            "http://sub.localhost",
+        ] {
+            let err = PlatformUrl::parse(remote).expect_err(remote);
+            assert_eq!(err.code(), "cli.insecure_platform_url", "{remote}");
+            assert!(!err.retryable(), "{remote}");
+        }
+        for local in [
+            "http://127.0.0.1:9",
+            "http://127.8.9.10",
+            "http://[::1]:8080",
+            "http://localhost:3000",
+            "http://LOCALHOST",
+            "https://example.com",
+            "https://10.0.0.1:8443/clwd/",
+        ] {
+            PlatformUrl::parse(local).expect(local);
+        }
+    }
+
+    /// A client for a platform that is not on this machine refuses plain http
+    /// before connecting, whatever URL it is pointed at. A redirect from https
+    /// to http, were one ever followed, would be exactly such a request.
+    ///
+    /// Invariant: CLI-11.
+    #[tokio::test]
+    async fn a_client_for_a_remote_platform_never_sends_plain_http() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let url = PlatformUrl::parse("https://platform.example").expect("valid");
+        let client = url.client().build().expect("client");
+        let err = client
+            .get(format!("http://{addr}/"))
+            .bearer_auth("clwd_tok_secret")
+            // The listener never answers; without this a regression hangs.
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+            .expect_err("plain http is refused");
+        assert!(err.is_builder(), "refused before any connection: {err}");
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(200), listener.accept())
+                .await
+                .is_err(),
+            "nothing connected"
+        );
     }
 }
